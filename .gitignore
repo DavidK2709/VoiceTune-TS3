@@ -1,0 +1,10 @@
+# Build-Ausgabe und Testdateien
+build/
+.shots/
+
+# Editor / System
+.vscode/
+.idea/
+Thumbs.db
+*.bmp
+*.raw
