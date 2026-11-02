@@ -12,6 +12,7 @@
 #include "app_discovery.h"
 #include "config_dialog.h"
 #include "engine.h"
+#include "remote.h"
 #include "plugin_definitions.h"
 #include "teamspeak/public_definitions.h"
 #include "teamspeak/public_rare_definitions.h"
@@ -263,12 +264,14 @@ EXPORT int ts3plugin_init()
     Engine::Get().SetEncodeCallback(ChannelEncodeInfo);
     Engine::Get().SetDiagCallback(SelfStateReport);
     Engine::Get().Init(Utf8ToWide(configPath));
+    RemoteStart();  
     Log("VoiceTune geladen");
     return 0;
 }
 
 EXPORT void ts3plugin_shutdown()
 {
+    RemoteStop();
     CloseConfigDialog();
     Engine::Get().Shutdown();
     if (g_pluginId) {

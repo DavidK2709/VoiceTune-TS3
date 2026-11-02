@@ -35,10 +35,11 @@ add_library(VoiceTune SHARED
     src/opus_preview.cpp
     src/settings.cpp
     src/config_dialog.cpp
+    src/remote.cpp
     src/voicetune.rc
     src/plugin.cpp)
 target_include_directories(VoiceTune PRIVATE third_party/ts3sdk src ${CMAKE_BINARY_DIR})
-target_link_libraries(VoiceTune PRIVATE ole32 oleaut32 uuid user32 gdi32 gdiplus shell32 shlwapi comdlg32 ${OPUS_LIB} mfuuid -static -static-libgcc -static-libstdc++)
+target_link_libraries(VoiceTune PRIVATE ole32 oleaut32 uuid user32 gdi32 gdiplus shell32 shlwapi comdlg32 ${OPUS_LIB} mfuuid ws2_32 -static -static-libgcc -static-libstdc++)
 set_target_properties(VoiceTune PROPERTIES PREFIX "" OUTPUT_NAME "VoiceTune_win64")
 
 # --- Standalone-Test (Capture ohne TeamSpeak) --------------------------------
