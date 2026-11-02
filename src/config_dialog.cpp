@@ -31,7 +31,8 @@ constexpr UINT     WM_APPS_READY = WM_APP + 1;
 constexpr UINT_PTR kTimerId      = 1;
 constexpr int      kTimerMs      = 33;
 constexpr int      kRefreshTicks = 30; // ~1 s: App-Liste ist live
-constexpr float    kW = 820, kH = 664;
+constexpr float    kSide = 88;           // Breite der Seitenleiste
+constexpr float    kW = 908, kH = 624;
 constexpr float    kPad = 20; // Innenabstand der Karten
 constexpr float    kGap = 12; // Abstand zwischen Karten und Kacheln
 constexpr int      kMaxDelayMs = 2000;
@@ -71,6 +72,7 @@ struct Layout {
     // Seite 0 (Profile) / Seite 4 (Einstellungen: Allgemein, Senden, Titel melden, Info, Erweitert)
     RectF profCard, profPrev, profNext, profField, profSave, profRename, profDelete;
     RectF setGeneral, langBtn[3], hotkeyBtn, nowCard, nowToggle[3], sendCard, optToggle, infoCard, advCard, advHeader;
+    RectF logo; // Logo oben in der Seitenleiste
     RectF gearBtn, settingsPanel; // Zahnrad neben dem Status-Schild, Panel des Einstellungs-Popups
     RectF soundCard, soundTile[kSoundSlots], soundVol, soundStop, soundEditField, soundEditOk, soundEditCancel;
     float tileW = 0, tileH = 0, gap = 0;
@@ -80,11 +82,15 @@ Layout MakeLayout(float s)
 {
     Layout l;
     l.s = s;
-    auto R = [s](float x, float y, float w, float h) { return RectF(x * s, y * s, w * s, h * s); };
-    // Kopfzeile y 12-60, Reiter y 68-102, Inhalt ab y 112, alle Seiten enden bei y 628, Fusszeile y 640
-    l.header = R(16, 12, 788, 48);
-    for (int i = 0; i < 4; ++i) l.tab[i] = R(16 + i * 199, 68, 191, 34); // Quelle & Mix | Equalizer | Dateien | Sounds
-    l.gearBtn       = R(656, 20, 32, 32); // links neben dem Status-Schild (Schild: x 698-790)
+    // Seitenleiste (x 0-88, volle Hoehe) mit Logo und 4 Navigationspunkten, rechts davon die Kopfleiste (Seitentitel, Zahnrad, Status-Schild).
+    // Die Seiten sind im alten Koordinatensystem entworfen (x ab 16, y ab 112, enden bei y 628) und werden hier um die Seitenleiste nach rechts
+    // und um 40 px nach oben geschoben: Inhalt ab y 72, Fusszeile y 600.
+    auto A = [s](float x, float y, float w, float h) { return RectF(x * s, y * s, w * s, h * s); };
+    auto R = [s](float x, float y, float w, float h) { return RectF((x + kSide) * s, (y - 40) * s, w * s, h * s); };
+    l.header = A(kSide + 16, 12, 788, 48);
+    l.logo   = A(22, 16, 44, 44);
+    for (int i = 0; i < 4; ++i) l.tab[i] = A(8, 92 + i * 76, kSide - 16, 68); // Quelle | EQ | Dateien | Sounds
+    l.gearBtn       = A(kSide + 16 + 788 - 14 - 92 - 10 - 32, 20, 32, 32); // links neben dem Status-Schild
     l.settingsPanel = R(8, 104, 804, 532);
 
     // Seite 2 "Dateien"
@@ -227,6 +233,9 @@ struct Ctx {
     HWND                          hwnd = nullptr;
     Layout                        lay;
     int                           page = 0;
+    float                         pageT = 1;    // Seitenwechsel: 0 = gerade gewechselt, 1 = fertig (gleitet ein)
+    float                         popupT = 0;   // Einstellungs-Popup: 0 = zu, 1 = offen (blendet weich ein/aus)
+    float                         navPos = 0; // gleitende Markierung der Seitenleiste (Seitenindex, weich nachgefuehrt)
     bool                          settingsOpen = false; // Einstellungs-Popup (Zahnrad) offen
     std::vector<TileState>        tiles;
     bool                          haveApps = false;
@@ -674,12 +683,21 @@ void DrawToggle(Graphics& g, const RectF& r, float anim)
 void DrawSlider(Graphics& g, const RectF& r, float frac, bool active, bool markMiddle, bool dim = false)
 {
     const float u   = r.Height / 22.0f;
-    const float pad = 8 * u, h = 6 * u, cy = r.Y + r.Height / 2;
+    const float pad = 8 * u, h = 7 * u, cy = r.Y + r.Height / 2;
     RectF       track(r.X + pad, cy - h / 2, r.Width - 2 * pad, h);
     FillRound(g, track, h / 2, C(col::track));
     const float x = track.X + track.Width * frac;
     RectF       fill(track.X, track.Y, x - track.X, h);
-    if (fill.Width > 0) FillRound(g, fill, h / 2, dim ? C(col::sub) : C(col::accent));
+    if (fill.Width > 0) {
+        if (dim) {
+            FillRound(g, fill, h / 2, C(col::sub));
+        } else {
+            GraphicsPath gp;
+            RoundPath(gp, fill, h / 2);
+            LinearGradientBrush gb(PointF(fill.X - 0.5f, 0), PointF(fill.X + std::max(fill.Width, 1.0f), 0), C(col::accent), C(0x7DB2FF));
+            g.FillPath(&gb, &gp);
+        }
+    }
     if (markMiddle) { // 100 %
         const float mark = track.X + track.Width * 0.5f;
         Pen         tick(C(col::sub, 120), std::max(1.0f, u));
@@ -688,6 +706,8 @@ void DrawSlider(Graphics& g, const RectF& r, float frac, bool active, bool markM
     const float kr = (active ? 9.0f : 8.0f) * u;
     FillCircle(g, x, cy + 1, kr, C(0x000000, 70));
     FillCircle(g, x, cy, kr, C(0xFFFFFF));
+    Pen ring(dim ? C(col::sub, 190) : C(col::accent, active ? 255 : 200), std::max(1.6f, 2.2f * u));
+    g.DrawEllipse(&ring, x - kr + 1.2f * u, cy - kr + 1.2f * u, 2 * (kr - 1.2f * u), 2 * (kr - 1.2f * u));
 }
 
 void DrawMeter(Graphics& g, const RectF& r, float level, float hold)
@@ -714,12 +734,12 @@ void DrawMeter(Graphics& g, const RectF& r, float level, float hold)
 void DrawButton(Graphics& g, const RectF& r, const std::wstring& label, const Font& f, bool selected, bool hover, float s, uint32_t selColor = col::accent, bool enabled = true)
 {
     if (!enabled) {
-        FillRound(g, r, 8 * s, C(col::track, 60));
+        FillRound(g, r, r.Height / 2, C(col::track, 60));
         Text(g, label, f, r, C(col::sub, 120), StringAlignmentCenter);
         return;
     }
-    if (selected) FillRound(g, r, 8 * s, C(selColor));
-    else FillRound(g, r, 8 * s, hover ? C(col::cardHover) : C(col::track, 140));
+    if (selected) FillRound(g, r, r.Height / 2, C(selColor));
+    else FillRound(g, r, r.Height / 2, hover ? C(col::cardHover) : C(col::track, 140));
     Text(g, label, f, r, selected ? C(0xFFFFFF) : C(col::text), StringAlignmentCenter);
 }
 
@@ -797,11 +817,114 @@ void DrawEditField(Graphics& g, Ctx* c, const RectF& f, float s)
 // Kleiner Pfeil-Knopf (links/rechts), z.B. zum Blaettern durch Profile
 void DrawArrowBtn(Graphics& g, const RectF& r, bool left, bool hover, bool enabled, float s)
 {
-    FillRound(g, r, 8 * s, enabled ? (hover ? C(col::cardHover) : C(col::track, 140)) : C(col::track, 60));
+    FillRound(g, r, r.Height / 2, enabled ? (hover ? C(col::cardHover) : C(col::track, 140)) : C(col::track, 60));
     const float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2, d = left ? -1.0f : 1.0f;
     PointF      tri[3] = {PointF(cx + d * 4 * s, cy), PointF(cx - d * 3 * s, cy - 6 * s), PointF(cx - d * 3 * s, cy + 6 * s)};
     SolidBrush  b(enabled ? C(col::text) : C(col::sub, 120));
     g.FillPolygon(&b, tri, 3);
+}
+
+// Rundes Rechteck mit senkrechtem Farbverlauf (Karten: oben eine Spur heller)
+void FillRoundGrad(Graphics& g, const RectF& r, float rad, const Color& top, const Color& bottom)
+{
+    if (r.Height < 2) return;
+    GraphicsPath p;
+    RoundPath(p, r, rad);
+    LinearGradientBrush br(PointF(r.X, r.Y), PointF(r.X, r.Y + r.Height), top, bottom);
+    g.FillPath(&br, &p);
+}
+
+// Kleine, selbst gezeichnete Symbole (24 x 24 Raster, Linienstil) fuer Seitenleiste und Kartentitel
+enum class Icon { Source, Speaker, Headphones, Person, Eq, Wave, Note, Pads, Chat, Info, Sliders, Send, Gear };
+
+void DrawIcon(Graphics& g, Icon ic, const RectF& r, const Color& col, float s)
+{
+    (void)s;
+    const float u = r.Width / 24.0f, X = r.X, Y = r.Y;
+    auto        P = [&](float x, float y) { return PointF(X + x * u, Y + y * u); };
+    Pen         pen(col, std::max(1.4f, 1.8f * u));
+    pen.SetStartCap(LineCapRound);
+    pen.SetEndCap(LineCapRound);
+    pen.SetLineJoin(LineJoinRound);
+    SolidBrush br(col);
+    switch (ic) {
+    case Icon::Source: { // Aktivitaets-Balken
+        const float hs[4] = {8, 16, 11, 14};
+        for (int i = 0; i < 4; ++i) FillRound(g, RectF(X + (3 + i * 5) * u, Y + (20 - hs[i]) * u, 3.2f * u, hs[i] * u), 1.6f * u, col);
+        break;
+    }
+    case Icon::Speaker: {
+        PointF poly[6] = {P(3, 9), P(7, 9), P(12, 5), P(12, 19), P(7, 15), P(3, 15)};
+        g.FillPolygon(&br, poly, 6);
+        g.DrawArc(&pen, X + 10 * u, Y + 8 * u, 7 * u, 8 * u, -55, 110);
+        g.DrawArc(&pen, X + 8 * u, Y + 4 * u, 13 * u, 16 * u, -55, 110);
+        break;
+    }
+    case Icon::Headphones:
+        g.DrawArc(&pen, X + 4 * u, Y + 3 * u, 16 * u, 16 * u, 180, 180);
+        FillRound(g, RectF(X + 3 * u, Y + 12 * u, 5 * u, 8 * u), 2 * u, col);
+        FillRound(g, RectF(X + 16 * u, Y + 12 * u, 5 * u, 8 * u), 2 * u, col);
+        break;
+    case Icon::Person:
+        g.DrawEllipse(&pen, X + 8 * u, Y + 3 * u, 8 * u, 8 * u);
+        g.DrawArc(&pen, X + 4 * u, Y + 13 * u, 16 * u, 14 * u, 180, 180);
+        break;
+    case Icon::Eq: {
+        const float xs[3] = {6, 12, 18}, ks[3] = {14, 7, 16};
+        for (int i = 0; i < 3; ++i) {
+            g.DrawLine(&pen, P(xs[i], 4), P(xs[i], 20));
+            FillCircle(g, X + xs[i] * u, Y + ks[i] * u, 2.8f * u, col);
+        }
+        break;
+    }
+    case Icon::Wave: {
+        PointF pts[9];
+        const float hs[9] = {0, -4, 5, -7, 3, -6, 4, -3, 0};
+        for (int i = 0; i < 9; ++i) pts[i] = P(2 + i * 2.5f, 12 + hs[i]);
+        g.DrawCurve(&pen, pts, 9);
+        break;
+    }
+    case Icon::Note:
+        g.FillEllipse(&br, X + 4 * u, Y + 14 * u, 7 * u, 5.5f * u);
+        g.DrawLine(&pen, P(10.5f, 16), P(10.5f, 4));
+        g.DrawBezier(&pen, P(10.5f, 4), P(15, 5), P(18, 7), P(18, 12));
+        break;
+    case Icon::Pads:
+        for (int i = 0; i < 4; ++i) StrokeRound(g, RectF(X + (3 + (i % 2) * 10) * u, Y + (3 + (i / 2) * 10) * u, 8 * u, 8 * u), 2.2f * u, col, std::max(1.4f, 1.8f * u));
+        break;
+    case Icon::Chat: {
+        StrokeRound(g, RectF(X + 3 * u, Y + 4 * u, 18 * u, 12 * u), 3 * u, col, std::max(1.4f, 1.8f * u));
+        PointF tail[3] = {P(8, 16), P(8, 21), P(13, 16)};
+        g.DrawLines(&pen, tail, 3);
+        break;
+    }
+    case Icon::Info:
+        g.DrawEllipse(&pen, X + 3 * u, Y + 3 * u, 18 * u, 18 * u);
+        g.DrawLine(&pen, P(12, 11), P(12, 17));
+        FillCircle(g, X + 12 * u, Y + 7.5f * u, 1.4f * u, col);
+        break;
+    case Icon::Sliders: {
+        const float ys[3] = {6, 12, 18}, ks[3] = {9, 15, 8};
+        for (int i = 0; i < 3; ++i) {
+            g.DrawLine(&pen, P(4, ys[i]), P(20, ys[i]));
+            FillCircle(g, X + ks[i] * u, Y + ys[i] * u, 2.6f * u, col);
+        }
+        break;
+    }
+    case Icon::Send: {
+        g.DrawLine(&pen, P(5, 19), P(19, 5));
+        PointF head[3] = {P(10, 5), P(19, 5), P(19, 14)};
+        g.DrawLines(&pen, head, 3);
+        break;
+    }
+    case Icon::Gear:
+        g.DrawEllipse(&pen, X + 8 * u, Y + 8 * u, 8 * u, 8 * u);
+        for (int k = 0; k < 8; ++k) {
+            const float a = static_cast<float>(k) * 0.7853982f;
+            g.DrawLine(&pen, P(12 + std::cos(a) * 6.2f, 12 + std::sin(a) * 6.2f), P(12 + std::cos(a) * 9.5f, 12 + std::sin(a) * 9.5f));
+        }
+        break;
+    }
 }
 
 void Paint(Ctx* c, HDC dc, const RECT& rc)
@@ -823,25 +946,53 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
         const std::wstring status = en.Status();
         const HitInfo      hv = c->hover;
 
-        auto card = [&](const RectF& r) { // flach: Halt kommt vom Grauton, der Rand ist nur noch ein Hauch
-            FillRound(g, r, 12 * s, C(col::card));
-            StrokeRound(g, r, 12 * s, C(col::border, 70));
+        auto card = [&](const RectF& r) { // flach mit Tiefe: feiner Verlauf, Lichtkante oben, Rand nur ein Hauch
+            FillRoundGrad(g, r, 14 * s, C(0x21242C), C(col::card));
+            StrokeRound(g, r, 14 * s, C(col::border, 60));
+            Pen hl(C(0xFFFFFF, 12), 1.0f);
+            g.DrawLine(&hl, r.X + 14 * s, r.Y + 1.0f, r.X + r.Width - 14 * s, r.Y + 1.0f);
         };
         auto pad = [&](const RectF& r, float x, float y, float ww, float hh) { return RectF(r.X + x * s, r.Y + y * s, ww * s, hh * s); };
+        auto cardTitle = [&](const RectF& cardR, Icon ic, const std::wstring& text, float y) { // Kartentitel: kleines Akzent-Symbol + Text
+            DrawIcon(g, ic, RectF(cardR.X + kPad * s, cardR.Y + (y + 3) * s, 20 * s, 20 * s), C(col::accent, 220), s);
+            Text(g, text, *c->fHead, RectF(cardR.X + (kPad + 28) * s, cardR.Y + y * s, 300 * s, 26 * s), C(col::text));
+        };
         auto labelRight = [&](const RectF& toggle, const std::wstring& text) {
             Text(g, text, *c->fSmall, RectF(toggle.X - 160 * s, toggle.Y, 150 * s, toggle.Height), C(col::sub), StringAlignmentFar);
         };
 
-        // --- Kopf ------------------------------------------------------------------
-        card(l.header);
-        if (c->appIcon) { // APP-ICON.png (hat transparenten Rand, daher etwas groesser zeichnen)
-            g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
-            g.DrawImage(c->appIcon.get(), RectF(l.header.X + 8 * s, l.header.Y + 2 * s, 44 * s, 44 * s));
-        } else {
-            FillRound(g, pad(l.header, 10, 8, 32, 32), 8 * s, C(col::accent));
-        }
-        Text(g, L"VoiceTune", *c->fTitle, pad(l.header, 60, 0, 330, 48), C(col::text));
+        // --- Seitenleiste: Logo und Navigation (Symbole mit kurzem Namen) -------------------------------
         {
+            SolidBrush side(C(col::card));
+            g.FillRectangle(&side, 0.0f, 0.0f, kSide * s, static_cast<float>(h));
+            Pen sep(C(col::border, 70), 1.0f);
+            g.DrawLine(&sep, kSide * s, 0.0f, kSide * s, static_cast<float>(h));
+            if (c->appIcon) { // APP-ICON.png (hat transparenten Rand)
+                g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+                g.DrawImage(c->appIcon.get(), l.logo);
+            } else {
+                FillRound(g, l.logo, 10 * s, C(col::accent));
+            }
+            const wchar_t* labels[4] = {Tr(L"Quelle"), Tr(L"EQ"), Tr(L"Dateien"), Tr(L"Sounds")};
+            const Icon     icons[4]  = {Icon::Source, Icon::Eq, Icon::Note, Icon::Pads};
+            const RectF    mark(l.tab[0].X, l.tab[0].Y + c->navPos * 76 * s, l.tab[0].Width, l.tab[0].Height); // gleitende Markierung
+            FillRound(g, mark, 14 * s, C(col::accent, 40));
+            FillRound(g, RectF(0, mark.Y + 16 * s, 4 * s, mark.Height - 32 * s), 2 * s, C(col::accent));
+            for (int i = 0; i < 4; ++i) {
+                const Hit   tabHit = i == 0 ? Hit::TabMix : (i == 1 ? Hit::TabEq : (i == 2 ? Hit::TabFiles : Hit::TabSounds));
+                const bool  active = c->page == i, hover = hv.hit == tabHit;
+                const RectF r      = l.tab[i];
+                if (hover && !active) FillRound(g, r, 14 * s, C(0xFFFFFF, 10));
+                const Color color = active ? C(col::accent) : (hover ? C(col::text) : C(col::sub));
+                DrawIcon(g, icons[i], RectF(r.X + (r.Width - 26 * s) / 2, r.Y + 10 * s, 26 * s, 26 * s), color, s);
+                Text(g, labels[i], *c->fTiny, RectF(r.X, r.Y + 42 * s, r.Width, 18 * s), color, StringAlignmentCenter);
+            }
+        }
+
+        // --- Kopfleiste: Seitentitel, Zahnrad (Einstellungs-Popup), Status-Schild -----------------------
+        {
+            const wchar_t* pageNames[4] = {Tr(L"Quelle & Mix"), Tr(L"Equalizer"), Tr(L"Dateien"), Tr(L"Sounds")};
+            Text(g, pageNames[c->page], *c->fTitle, RectF(l.header.X + 4 * s, l.header.Y, 420 * s, l.header.Height), C(col::text));
             std::wstring label;
             uint32_t     color;
             if (status.rfind(L"Aktiv", 0) == 0) { label = Tr(L"AKTIV"); color = col::ok; }
@@ -852,41 +1003,24 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
             FillRound(g, pill, 12 * s, C(color, 38));
             FillCircle(g, pill.X + 14 * s, pill.Y + 12 * s, 4 * s, C(color));
             Text(g, label, *c->fSmall, RectF(pill.X + 24 * s, pill.Y, pill.Width - 24 * s, pill.Height), C(color));
-        }
-        {   // Zahnrad: oeffnet/schliesst das Einstellungs-Popup
-            const RectF& gb   = l.gearBtn;
-            const bool   hot  = hv.hit == Hit::SettingsGear, open = c->settingsOpen;
-            if (open) FillRound(g, gb, 9 * s, C(col::accent, 60));
-            else if (hot) FillRound(g, gb, 9 * s, C(col::cardHover));
-            const float gx = gb.X + gb.Width / 2, gy = gb.Y + gb.Height / 2;
-            Pen         gp(open ? C(col::accent) : (hot ? C(col::text) : C(col::sub)), std::max(1.6f, 1.8f * s));
-            g.DrawEllipse(&gp, gx - 5 * s, gy - 5 * s, 10 * s, 10 * s);
-            for (int k = 0; k < 8; ++k) {
-                const float a = static_cast<float>(k) * 0.7853982f;
-                g.DrawLine(&gp, gx + std::cos(a) * 7 * s, gy + std::sin(a) * 7 * s, gx + std::cos(a) * 10 * s, gy + std::sin(a) * 10 * s);
-            }
+            const RectF& gb  = l.gearBtn;
+            const bool   hot = hv.hit == Hit::SettingsGear, open = c->settingsOpen;
+            if (open) FillRound(g, gb, 16 * s, C(col::accent, 60));
+            else if (hot) FillRound(g, gb, 16 * s, C(col::cardHover));
+            DrawIcon(g, Icon::Gear, RectF(gb.X + 5 * s, gb.Y + 5 * s, 22 * s, 22 * s), open ? C(col::accent) : (hot ? C(col::text) : C(col::sub)), s);
         }
 
-        // --- Tabs --------------------------------------------------------------------
-        {
-            const wchar_t* names[4] = {Tr(L"Quelle & Mix"), Tr(L"Equalizer"), Tr(L"Dateien"), Tr(L"Sounds")};
-            for (int i = 0; i < 4; ++i) {
-                const Hit  tabHit = i == 0 ? Hit::TabMix : (i == 1 ? Hit::TabEq : (i == 2 ? Hit::TabFiles : Hit::TabSounds));
-                const bool active = c->page == i, hover = hv.hit == tabHit;
-                RectF      r = l.tab[i];
-                FillRound(g, r, 9 * s, active ? C(col::accent, 46) : (hover ? C(col::cardHover) : C(col::card)));
-                if (active) StrokeRound(g, r, 9 * s, C(col::accent, 150));
-                Text(g, names[i], *c->fBody, r, active ? C(col::text) : C(col::sub), StringAlignmentCenter);
-            }
-        }
+        // Seitenwechsel: Inhalt gleitet von unten ein und blendet auf (Ausblendflaeche in Hintergrundfarbe)
+        const float pageE = 1.0f - std::pow(1.0f - std::min(1.0f, c->pageT), 3.0f);
+        if (pageE < 1.0f) g.TranslateTransform(0.0f, (1.0f - pageE) * 16 * s);
 
         if (c->page == 0) {
             // --- Audio-Quelle: Titelleiste mit Status und Hauptschalter "Musik einspielen" -----------------
             card(l.gridCard);
-            Text(g, Tr(L"Audio-Quelle"), *c->fHead, pad(l.gridCard, kPad, 10, 150, 28), C(col::text));
+            cardTitle(l.gridCard, Icon::Source, Tr(L"Audio-Quelle"), 10);
             {
                 const bool problem = st.enabled && st.musicMode && en.MusicModeEngaged() && en.SendShare() < 0.6f; // Musikmodus aktiv, TS3 sendet aber nicht
-                const RectF sr     = pad(l.gridCard, kPad + 120, 10, 410, 28);
+                const RectF sr     = pad(l.gridCard, kPad + 150, 10, 380, 28);
                 if (problem) Text(g, Tr(L"TS3 sendet die Musik nicht – Hilfe: Einstellungen → Erweitert"), *c->fSmall, sr, C(col::warn));
                 else Text(g, TrStatus(status), *c->fSmall, sr, C(col::sub));
             }
@@ -906,8 +1040,9 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                 if (t.Y + t.Height < l.gridArea.Y || t.Y > l.gridArea.Y + l.gridArea.Height) continue;
                 const bool selected = a.exe == st.targetExe;
                 const bool hover    = hv.hit == Hit::Tile && hv.idx == static_cast<int>(i);
-                FillRound(g, t, 10 * s, selected ? C(col::accent, 46) : (hover ? C(col::cardHover) : C(0xFFFFFF, 10)));
-                StrokeRound(g, t, 10 * s, selected ? C(col::accent, 170) : C(col::border, 70));
+                if (selected) StrokeRound(g, RectF(t.X - 2 * s, t.Y - 2 * s, t.Width + 4 * s, t.Height + 4 * s), 14 * s, C(col::accent, 50), 3.0f); // Glimmen
+                FillRound(g, t, 12 * s, selected ? C(col::accent, 46) : (hover ? C(col::cardHover) : C(0xFFFFFF, 10)));
+                StrokeRound(g, t, 12 * s, selected ? C(col::accent, 170) : C(col::border, 60));
                 if (a.path.empty()) { // kein Icon: Buchstaben-Platzhalter
                     FillCircle(g, t.X + t.Width / 2, t.Y + 28 * s, 16 * s, C(col::track));
                     Text(g, PrettyExeName(a.exe).substr(0, 1), *c->fHead, RectF(t.X, t.Y + 12 * s, t.Width, 32 * s), C(col::text), StringAlignmentCenter);
@@ -927,7 +1062,7 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
 
             // --- Pegel + Lautstaerke -----------------------------------------------------
             card(l.mixCard);
-            Text(g, Tr(L"Lautstärke"), *c->fHead, pad(l.mixCard, kPad, 10, 340, 26), C(col::text));
+            cardTitle(l.mixCard, Icon::Speaker, Tr(L"Lautstärke"), 10);
             DrawMeter(g, l.meterL, c->dispL, c->holdL);
             DrawMeter(g, l.meterR, c->dispR, c->holdR);
             Text(g, L"L", *c->fSmall, RectF(l.meterL.X - 14 * s, l.meterL.Y - 3 * s, 12 * s, l.meterL.Height + 6 * s), C(col::sub));
@@ -962,7 +1097,7 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
             // --- Mithoeren ----------------------------------------------------------------
             card(l.monitorCard);
             if (hv.hit == Hit::MonitorToggle) FillRound(g, l.monitorRow, 10 * s, C(0xFFFFFF, 8));
-            Text(g, Tr(L"Mithören"), *c->fHead, pad(l.monitorCard, kPad, 10, 300, 24), C(col::text));
+            cardTitle(l.monitorCard, Icon::Headphones, Tr(L"Mithören"), 10);
             Text(g, st.monitor ? Tr(L"Du hörst die Musik verzögert in TeamSpeak") : Tr(L"Aus – prüfe, was die anderen hören"), *c->fSmall, pad(l.monitorCard, kPad, 34, 270, 18),
                  C(col::sub));
             DrawToggle(g, l.monitorToggle, c->anim[A_MONITOR]);
@@ -972,7 +1107,7 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
             // --- Profile: benannte Schnappschuesse der Einstellungen ---------------------------------
             {
                 card(l.profCard);
-                Text(g, Tr(L"Profile"), *c->fHead, pad(l.profCard, kPad, 10, 200, 26), C(col::text));
+                cardTitle(l.profCard, Icon::Person, Tr(L"Profile"), 10);
                 const bool     editing  = c->edit.active && c->edit.kind == 1;
                 const Profile* curP     = st.profiles.Find(st.profileName);
                 const bool     modified = curP && !SameProfile(*curP, ProfileFromSettings(st));
@@ -1014,7 +1149,7 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
 
             // --- Equalizer-Karte -----------------------------------------------------------
             card(l.eqCard);
-            Text(g, Tr(L"Equalizer"), *c->fHead, pad(l.eqCard, kPad, 10, 120, 26), C(col::text));
+            cardTitle(l.eqCard, Icon::Eq, Tr(L"Equalizer"), 10);
             for (int i = 0; i < 3; ++i) {
                 const int counts[3] = {10, 31, 61};
                 DrawButton(g, l.bandBtn[i], std::to_wstring(counts[i]), *c->fSmall, st.eqBands == counts[i], hv.hit == Hit::EqBandsBtn && hv.idx == i, s);
@@ -1170,8 +1305,8 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
 
             // --- Tonspur ----------------------------------------------------------------------
             card(l.tonCard);
-            Text(g, Tr(L"Tonspur – Echtzeit"), *c->fHead, pad(l.tonCard, kPad, 10, 300, 26), C(col::text));
-            Text(g, Tr(L"was gerade ins Mikrofon gemischt wird"), *c->fSmall, pad(l.tonCard, 190, 10, 400, 26), C(col::sub));
+            cardTitle(l.tonCard, Icon::Wave, Tr(L"Tonspur – Echtzeit"), 10);
+            Text(g, Tr(L"was gerade ins Mikrofon gemischt wird"), *c->fSmall, pad(l.tonCard, 218, 10, 400, 26), C(col::sub));
             FillRound(g, RectF(l.tonPlot.X - 4 * s, l.tonPlot.Y - 2 * s, l.tonPlot.Width + 8 * s, l.tonPlot.Height + 4 * s), 8 * s, C(col::bg));
             {
                 const int          cols = static_cast<int>(l.tonPlot.Width / (2 * s));
@@ -1255,8 +1390,8 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
 
             // Wiedergabeliste bzw. Ablageflaeche
             card(l.fileCard);
-            Text(g, Tr(L"Wiedergabeliste"), *c->fHead, pad(l.fileCard, kPad, 10, 240, 28), C(col::text));
-            Text(g, count ? std::to_wstring(count) + (count == 1 ? Tr(L" Titel") : Tr(L" Titel "))  /* zweiter Schluessel mit Leerzeichen: Mehrzahl */ : std::wstring(Tr(L"leer")), *c->fSmall, pad(l.fileCard, 150, 8, 200, 28), C(col::sub));
+            cardTitle(l.fileCard, Icon::Note, Tr(L"Wiedergabeliste"), 10);
+            Text(g, count ? std::to_wstring(count) + (count == 1 ? Tr(L" Titel") : Tr(L" Titel "))  /* zweiter Schluessel mit Leerzeichen: Mehrzahl */ : std::wstring(Tr(L"leer")), *c->fSmall, pad(l.fileCard, 178, 8, 200, 28), C(col::sub));
             g.SetClip(l.fileArea);
             if (count == 0) {
                 RectF zone(l.fileArea.X + 24 * s, l.fileArea.Y + 24 * s, l.fileArea.Width - 48 * s, l.fileArea.Height - 48 * s);
@@ -1317,7 +1452,7 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
         } else if (c->page == 3) {
             // =========================================================== Seite "Sounds" ===========================================================
             card(l.soundCard);
-            Text(g, Tr(L"Soundboard"), *c->fHead, pad(l.soundCard, kPad, 10, 300, 26), C(col::text));
+            cardTitle(l.soundCard, Icon::Pads, Tr(L"Soundboard"), 10);
             const bool editingSound = c->edit.active && c->edit.kind == 2;
             if (editingSound) {
                 DrawEditField(g, c, l.soundEditField, s);
@@ -1367,6 +1502,12 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
             DrawButton(g, l.soundStop, Tr(L"Alle stoppen"), *c->fSmall, false, hv.hit == Hit::SoundStop, s, col::bad);
         }
 
+        g.ResetTransform();
+        if (pageE < 1.0f) { // Einblend-Schleier ueber dem Inhaltsbereich (ohne Seitenleiste, Kopfleiste und Fusszeile)
+            SolidBrush veil(C(col::bg, static_cast<BYTE>((1.0f - pageE) * 255)));
+            g.FillRectangle(&veil, l.header.X - 12 * s, l.header.Y + l.header.Height + 6 * s, static_cast<float>(w) - (l.header.X - 12 * s), l.diag.Y - (l.header.Y + l.header.Height + 6 * s) - 2 * s);
+        }
+
         // Einstellungs-Popup (Zahnrad): der Inhalt wird am Ende des Zeichnens ueber alles gelegt
         auto paintSettings = [&]() {
             // =========================================================== Seite "Einstellungen" ===========================================================
@@ -1380,7 +1521,7 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
 
             // --- Allgemein: Sprache, Hotkeys ---------------------------------------------------------
             card(l.setGeneral);
-            Text(g, Tr(L"Allgemein"), *c->fHead, pad(l.setGeneral, kPad, 10, 300, 26), C(col::text));
+            cardTitle(l.setGeneral, Icon::Gear, Tr(L"Allgemein"), 10);
             Text(g, Tr(L"Oberflächensprache"), *c->fBody, pad(l.setGeneral, kPad, 40, 300, 20), C(col::text));
             {
                 const wchar_t* names[3] = {Tr(L"Automatisch"), L"Deutsch", L"English"};
@@ -1392,7 +1533,7 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
 
             // --- Titel melden (Now-Playing) ----------------------------------------------------------
             card(l.nowCard);
-            Text(g, Tr(L"Titel melden"), *c->fHead, pad(l.nowCard, kPad, 10, 300, 24), C(col::text));
+            cardTitle(l.nowCard, Icon::Chat, Tr(L"Titel melden"), 10);
             {
                 const wchar_t* labels[3] = {Tr(L"Im eigenen Chat"), Tr(L"Im Kanal-Chat (alle sehen es)"), Tr(L"In den Client-Metadaten")};
                 for (int i = 0; i < 3; ++i) {
@@ -1403,7 +1544,7 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
 
             // --- Senden: immer senden, Mono, Qualitaet -----------------------------------------------
             card(l.sendCard);
-            Text(g, Tr(L"Senden"), *c->fHead, pad(l.sendCard, kPad, 10, 300, 26), C(col::text));
+            cardTitle(l.sendCard, Icon::Send, Tr(L"Senden"), 10);
             toggleRow(l.optToggle, l.sendCard.X, l.sendCard.Width, c->anim[A_ALWAYS], Tr(L"Musik immer senden"), Tr(L"Auch ohne Sprachaktivierung / Push-to-Talk"), col::sub, hv.hit == Hit::AlwaysToggle);
             toggleRow(l.monoToggle, l.sendCard.X, l.sendCard.Width, c->anim[A_MONO], Tr(L"Mono einspielen"), Tr(L"Stereo zu Mono mischen"), col::sub, hv.hit == Hit::MonoToggle);
             Text(g, Tr(L"Qualität"), *c->fBody, RectF(l.sendCard.X + kPad * s, l.qualBtn[0].Y - 26 * s, 300 * s, 20 * s), C(col::text));
@@ -1414,11 +1555,11 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
 
             // --- Info: Stream-Deck-Schnittstelle, Version, Motto -------------------------------------------
             card(l.infoCard);
-            Text(g, Tr(L"Info"), *c->fHead, pad(l.infoCard, kPad, 10, 300, 26), C(col::text));
+            cardTitle(l.infoCard, Icon::Info, Tr(L"Info"), 10);
             {
                 const bool         run  = RemoteIsRunning();
                 const std::wstring port = std::to_wstring(RemotePort());
-                const std::wstring line = std::wstring(Tr(L"Stream-Deck-Schnittstelle")) + L": " + ReplaceAll(run ? Tr(L"aktiv · Port %s") : Tr(L"nicht verfügbar – Port %s ist belegt"), L"%s", port);
+                const std::wstring line = std::wstring(L"Stream Deck: ") + ReplaceAll(run ? Tr(L"aktiv · Port %s") : Tr(L"nicht verfügbar (Port %s belegt)"), L"%s", port);
                 Text(g, line, *c->fSmall, pad(l.infoCard, kPad, 42, 348, 20), C(run ? col::ok : col::warn));
             }
             Text(g, L"VoiceTune 2.0", *c->fSmall, pad(l.infoCard, kPad, 64, 348, 18), C(col::sub));
@@ -1432,8 +1573,9 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                 if (!open) adv.Height = l.advHeader.Height;
                 card(adv);
                 if (hv.hit == Hit::AdvToggle) FillRound(g, l.advHeader, 10 * s, C(0xFFFFFF, 8));
-                Text(g, Tr(L"Erweitert"), *c->fHead, pad(l.advHeader, kPad, 0, 140, 44), C(col::text));
-                if (!open) Text(g, Tr(L"Musikmodus, Mikro-Gate, Klang für Opus"), *c->fSmall, pad(l.advHeader, 120, 0, 540, 44), C(col::sub));
+                DrawIcon(g, Icon::Sliders, RectF(l.advHeader.X + kPad * s, l.advHeader.Y + 12 * s, 20 * s, 20 * s), C(col::accent, 220), s);
+                Text(g, Tr(L"Erweitert"), *c->fHead, pad(l.advHeader, kPad + 28, 0, 140, 44), C(col::text));
+                if (!open) Text(g, Tr(L"Musikmodus, Mikro-Gate, Klang für Opus"), *c->fSmall, pad(l.advHeader, 160, 0, 500, 44), C(col::sub));
                 {   // Pfeil: zu = nach rechts, auf = nach unten
                     const float ax = l.advHeader.X + l.advHeader.Width - 28 * s, ay = l.advHeader.Y + l.advHeader.Height / 2;
                     PointF      closed[3] = {PointF(ax - 3 * s, ay - 6 * s), PointF(ax - 3 * s, ay + 6 * s), PointF(ax + 4 * s, ay)};
@@ -1485,12 +1627,12 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
         // --- Diagnose ---------------------------------------------------------------------
         if ((c->page == 0 || c->page == 3) && c->toastTicks > 0) { // Rueckmeldung (Profile, Sounds) in der Fusszeile
             RectF d = l.diag;
-            d.Width = (kW - 40) * s;
+            d.Width = (kW - kSide - 24) * s;
             const BYTE a = static_cast<BYTE>(255 * std::min(1.0f, c->toastTicks / 12.0f));
             Text(g, c->toast, *c->fSmall, d, C(c->toastBad ? col::bad : col::ok, a));
         } else {
             RectF d = l.diag;
-            if (c->page != 1 && !(c->page == 0 && !st.hiddenApps.empty())) d.Width = (kW - 40) * s; // rechts ist nur auf der Equalizer-Seite (Kanal-Codec) und bei ausgeblendeten Apps (Seite 1) etwas
+            if (c->page != 1 && !(c->page == 0 && !st.hiddenApps.empty())) d.Width = (kW - kSide - 24) * s; // rechts ist nur auf der Equalizer-Seite (Kanal-Codec) und bei ausgeblendeten Apps (Seite 1) etwas
             Text(g, TrDiag(en.Diagnostics()), *c->fSmall, d, C(col::sub, 170));
         }
         if (c->page == 2 || c->page == 3 || (c->page == 0 && st.hiddenApps.empty())) // rechts frei: Namen der Autoren, unaufdringlich
@@ -1565,20 +1707,27 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                 }
             }
         }
-        if (c->settingsOpen) { // Popup: Hintergrund abdunkeln (Kopfzeile bleibt), Panel mit Schatten, Inhalt
+        if (c->popupT > 0.01f) { // Popup: Hintergrund abdunkeln (Kopfleiste bleibt), Panel gleitet ein und blendet auf
+            const float  e  = 1.0f - std::pow(1.0f - c->popupT, 3.0f);
             const float  W = static_cast<float>(w), H = static_cast<float>(h);
             const RectF& pn = l.settingsPanel;
-            SolidBrush   dim(C(0x000000, 150));
+            SolidBrush   dim(C(0x000000, static_cast<BYTE>(150 * e)));
             g.FillRectangle(&dim, 0.0f, l.header.Y + l.header.Height + 6 * s, W, H);
-            FillRound(g, RectF(pn.X, pn.Y + 6 * s, pn.Width, pn.Height), 14 * s, C(0x000000, 110));
-            FillRound(g, pn, 14 * s, C(0x181B21));
-            StrokeRound(g, pn, 14 * s, C(col::border, 120));
+            g.TranslateTransform(0.0f, (1.0f - e) * 18 * s);
+            FillRound(g, RectF(pn.X, pn.Y + 6 * s, pn.Width, pn.Height), 16 * s, C(0x000000, static_cast<BYTE>(110 * e)));
+            FillRound(g, pn, 16 * s, C(0x181B21));
+            StrokeRound(g, pn, 16 * s, C(col::border, 120));
             paintSettings();
+            if (e < 1.0f) { // Schleier: das Panel blendet auf
+                SolidBrush veil(C(0x181B21, static_cast<BYTE>((1.0f - e) * 255)));
+                g.FillRectangle(&veil, pn.X - 1 * s, pn.Y - 1 * s, pn.Width + 2 * s, pn.Height + 8 * s);
+            }
+            g.ResetTransform();
         }
     }
 
     // Icons (GDI, mit Clip auf das Raster) nach dem GDI+-Pass; bei offenem Popup entfallen sie (sie wuerden ueber der Abdunkelung liegen)
-    if (c->page == 0 && !c->settingsOpen) {
+    if (c->page == 0 && c->popupT < 0.01f && c->pageT > 0.7f) {
         const Layout& l  = c->lay;
         const int     sz = static_cast<int>(32 * l.s);
         SaveDC(mem);
@@ -1606,6 +1755,14 @@ void UpdateAnim(Ctx* c)
 {
     const Settings st   = Engine::Get().GetSettings();
     auto           ease = [](float& v, float target) { v += (target - v) * 0.35f; if (std::fabs(target - v) < 0.01f) v = target; };
+    if (c->pageT < 1.0f) c->pageT = std::min(1.0f, c->pageT + 0.12f); // ca. 0,3 s
+    {
+        const float target = c->settingsOpen ? 1.0f : 0.0f;
+        c->popupT += (target - c->popupT) * 0.35f;
+        if (std::fabs(target - c->popupT) < 0.02f) c->popupT = target;
+    }
+    c->navPos += (static_cast<float>(c->page) - c->navPos) * 0.3f; // gleitende Markierung der Seitenleiste
+    if (std::fabs(static_cast<float>(c->page) - c->navPos) < 0.01f) c->navPos = static_cast<float>(c->page);
     ease(c->anim[A_MAIN], st.enabled ? 1.0f : 0.0f);
     ease(c->anim[A_ALWAYS], st.alwaysSend ? 1.0f : 0.0f);
     ease(c->anim[A_MONITOR], st.monitor ? 1.0f : 0.0f);
@@ -2119,7 +2276,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         case Hit::TabFiles:
         case Hit::TabSounds: {
             const int newPage = (h.hit == Hit::TabMix) ? 0 : (h.hit == Hit::TabEq ? 1 : (h.hit == Hit::TabFiles ? 2 : 3));
-            if (newPage != c->page) CancelEdit(c); // eine begonnene Namenseingabe gehoert zur Seite
+            if (newPage != c->page) {
+                CancelEdit(c); // eine begonnene Namenseingabe gehoert zur Seite
+                c->pageT = 0;  // neue Seite gleitet ein
+            }
             c->page       = newPage;
             c->presetOpen = false;
             c->deleteArm  = 0;

@@ -377,12 +377,11 @@ int main(int argc, char** argv)
                     std::printf("  %s  %s\n", ok ? "ok  " : "FEHL", what);
                     if (!ok) ++fails;
                 };
-                const int tabX[4] = {111, 310, 509, 708};
-                const int gearX = 672, gearY = 36; // Zahnrad neben dem Status-Schild
+                const int gearX = 760, gearY = 36; // Zahnrad neben dem Status-Schild
                 const std::string base = argv[3];
                 auto shotPages = [&](const char* prefix) {
                     for (int i = 0; i < 4; ++i) {
-                        click(tabX[i], 85);
+                        click(44, 126 + i * 76);  // Seitenleiste
                         Sleep(700);
                         shoot(base + prefix + std::to_string(i) + ".bmp");
                     }
@@ -392,25 +391,25 @@ int main(int argc, char** argv)
                 click(gearX, gearY);                       // Zahnrad: Einstellungs-Popup auf
                 Sleep(500);
                 shoot(base + "set_de4.bmp");               // Popup, "Erweitert" zu
-                click(410, 490);                           // "Erweitert" aufklappen
+                click(498, 450);                           // "Erweitert" aufklappen
                 Sleep(500);
                 shoot(base + "set_deadv.bmp");
 
                 // Jedes Element bedienen
-                click(210, 192);                           // Sprache: Deutsch
-                click(90, 192);                            // Sprache: Automatisch
-                click(330, 192);                           // Sprache: English
-                click(210, 275);                           // Hotkeys festlegen ...
-                click(360, 375);                           // Titel melden: eigener Chat aus
-                click(360, 403);                           // Kanal-Chat an
-                click(360, 431);                           // Client-Metadaten an
-                click(760, 161);                           // Musik immer senden aus
-                click(760, 211);                           // Mono an
-                click(490, 286);                           // Qualitaet: niedrige Latenz
-                click(360, 535);                           // Musikmodus aus
-                click(200, 585);                           // Mikro-Gate irgendwo in der Mitte
-                click(760, 535);                           // Opus optimieren aus
-                click(760, 585);                           // Opus-Vorschau aus
+                click(298, 152);                           // Sprache: Deutsch
+                click(178, 152);                            // Sprache: Automatisch
+                click(418, 152);                           // Sprache: English
+                click(298, 235);                           // Hotkeys festlegen ...
+                click(448, 335);                           // Titel melden: eigener Chat aus
+                click(448, 363);                           // Kanal-Chat an
+                click(448, 391);                           // Client-Metadaten an
+                click(848, 121);                           // Musik immer senden aus
+                click(848, 171);                           // Mono an
+                click(578, 246);                           // Qualitaet: niedrige Latenz
+                click(448, 495);                           // Musikmodus aus
+                click(288, 545);                           // Mikro-Gate irgendwo in der Mitte
+                click(848, 495);                           // Opus optimieren aus
+                click(848, 545);                           // Opus-Vorschau aus
                 Sleep(1800);                               // Einstellungen werden im Sekundentakt gespeichert
                 check(val("Language", -1) == 2, "Sprache English gespeichert");
                 check(val("NowPlayingChat", -1) == 0 && val("NowPlayingChannel", -1) == 1 && val("NowPlayingMeta", -1) == 1, "Titel melden: Chat aus, Kanal an, Metadaten an");
@@ -424,15 +423,15 @@ int main(int argc, char** argv)
                 check(val("AdvancedOpen", -1) == 1, "Erweitert aufgeklappt gespeichert");
 
                 shoot(base + "set_enadv.bmp");             // Englisch, aufgeklappt, alles umgestellt
-                click(410, 490);                           // Erweitert zuklappen
+                click(498, 450);                           // Erweitert zuklappen
                 Sleep(1400);
                 check(val("AdvancedOpen", -1) == 0, "Erweitert zugeklappt gespeichert");
-                click(410, 85);                            // Klick neben das Panel schliesst das Popup
+                click(400, 612);                            // Klick neben das Panel schliesst das Popup
                 Sleep(300);
                 shoot(base + "set_enclosed.bmp");          // zu: Hauptseite wieder sichtbar und bedienbar
                 shotPages("set_en");                       // alle 4 Seiten, English
                 click(gearX, gearY);                       // Popup wieder auf
-                click(90, 192);                            // zurueck auf Automatisch (die Einstellungen landen nur in %TEMP%)
+                click(178, 152);                            // zurueck auf Automatisch (die Einstellungen landen nur in %TEMP%)
                 Sleep(500);
                 std::printf("UI-Pruefung: %d Fehler\n", fails);
                 micStop = true;
@@ -446,9 +445,9 @@ int main(int argc, char** argv)
             if (const char* live = std::getenv("AAM_LIVE")) {
                 std::printf("Fenster offen fuer %s s\n", live);
                 if (std::getenv("AAM_OPENSET")) { // Zahnrad klicken: Einstellungs-Popup gleich offen
-                    SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(672, 36));
-                    SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(672, 36));
-                    SendMessageW(w, WM_LBUTTONUP, 0, MAKELPARAM(672, 36));
+                    SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(760, 36));
+                    SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(760, 36));
+                    SendMessageW(w, WM_LBUTTONUP, 0, MAKELPARAM(760, 36));
                 }
                 Sleep(static_cast<DWORD>(std::atoi(live)) * 1000);
                 micStop = true;
@@ -492,35 +491,35 @@ int main(int argc, char** argv)
                 const std::string  base = argv[3];
                 const std::wstring d    = std::wstring(sdir, sdir + std::strlen(sdir));
                 // Seite 0: Profil speichern (Namenseingabe), Wert aendern -> "(geaendert)"
-                click(506, 601);                         // "Speichern als ..."
+                click(594, 561);                         // "Speichern als ..."
                 type(L"Abend");
                 Sleep(400);
                 shoot(base + "p1.bmp");                  // Eingabe offen
                 enter();
                 Sleep(400);
                 shoot(base + "p2.bmp");                  // gespeichert, Meldung in der Fusszeile
-                click(125, 523);                         // Musik-Lautstaerke aendern
+                click(213, 483);                         // Musik-Lautstaerke aendern
                 Sleep(500);
                 shoot(base + "p3.bmp");                  // Profil "(geaendert)"
                 // Seite Sounds
-                click(708, 85);
+                click(44, 354);
                 drop({d + L"\\tone.wav", d + L"\\tone.mp3"}, 0, 0);
                 Sleep(1800);
                 shoot(base + "s1.bmp");                  // zwei Kacheln belegt
-                click(125, 257);                         // Kachel 1 spielen
+                click(213, 217);                         // Kachel 1 spielen
                 Sleep(150);
                 shoot(base + "s2.bmp");                  // Aufleuchten
-                rclick(315, 257);                        // Menue an Kachel 2
-                SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(331, 279));
+                rclick(403, 217);                        // Menue an Kachel 2
+                SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(419, 239));
                 shoot(base + "s3.bmp");
-                click(331, 279);                         // "Umbenennen"
+                click(419, 239);                         // "Umbenennen"
                 type(L"Hupe laut");
                 Sleep(300);
                 shoot(base + "s4.bmp");                  // Namenseingabe
                 enter();
                 Sleep(400);
                 shoot(base + "s5.bmp");
-                click(111, 85);                          // zurueck auf Seite 0
+                click(44, 126);                          // zurueck auf Seite 0
                 Sleep(400);
                 shoot(base + "p4.bmp");
                 if (const char* hold = std::getenv("AAM_HOLD")) Sleep(static_cast<DWORD>(std::atoi(hold)) * 1000);

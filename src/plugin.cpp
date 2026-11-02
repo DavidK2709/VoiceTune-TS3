@@ -417,7 +417,7 @@ EXPORT void ts3plugin_initMenus(struct PluginMenuItem*** menuItems, char** menuI
 {
     *menuItems    = static_cast<PluginMenuItem**>(std::malloc(sizeof(PluginMenuItem*) * 3));
     (*menuItems)[0] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_TOGGLE, Tr8("Musik einspielen: Ein/Aus").c_str(), "toggle.png");
-    (*menuItems)[1] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_CONFIG, Tr8("Einstellungen...").c_str(), "settings.png");
+    (*menuItems)[1] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_CONFIG, Tr8("Steuerung öffnen").c_str(), "settings.png");
     (*menuItems)[2] = nullptr;
     *menuIcon       = static_cast<char*>(std::malloc(PLUGIN_MENU_BUFSZ));
     std::strcpy(*menuIcon, "plugin.png");

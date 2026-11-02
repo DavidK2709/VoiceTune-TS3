@@ -23,7 +23,7 @@ int main()
     CHECK(count > 150, "Tabelle hat %zu Eintraege", count);
 
     // Texte, die in beiden Sprachen gleich lauten duerfen (Eigennamen, Fachwoerter)
-    const std::set<std::wstring> same = {L"Equalizer", L"Soundboard", L"Sounds", L"Loudness", L"Bass+", L"Hotkeys …", L"Info"};
+    const std::set<std::wstring> same = {L"Equalizer", L"Soundboard", L"Sounds", L"Loudness", L"Bass+", L"Hotkeys …", L"Info", L"EQ"};
     std::set<std::wstring>       keys;
     for (size_t i = 0; i < count; ++i) {
         const std::wstring de = table[i].de, en = table[i].en;
@@ -41,7 +41,7 @@ int main()
     CHECK(i18n::Current() == i18n::Lang::German && i18n::Setting() == 1, "Deutsch gewaehlt");
     const wchar_t* de = L"Löschen";
     CHECK(i18n::Tr(de) == de && std::wstring(i18n::Tr(L"Abbrechen")) == L"Abbrechen", "Deutsch bleibt Deutsch");
-    CHECK(i18n::Tr8("Einstellungen...") == "Einstellungen...", "Tr8 Deutsch");
+    CHECK(i18n::Tr8("Steuerung öffnen") == "Steuerung öffnen", "Tr8 Deutsch");
 
     // English
     i18n::SetSetting(2);
@@ -49,7 +49,7 @@ int main()
     CHECK(std::wstring(i18n::Tr(L"Löschen")) == L"Delete" && std::wstring(i18n::Tr(L"Abbrechen")) == L"Cancel", "Uebersetzung");
     CHECK(std::wstring(i18n::Tr(L"Löschen")) == L"Delete", "zweiter Aufruf (Zeiger-Cache) gleich");
     CHECK(i18n::Tr(std::wstring(L"Umbenennen")) == L"Rename", "Tr(wstring)");
-    CHECK(i18n::Tr8("Einstellungen...") == "Settings...", "Tr8 English");
+    CHECK(i18n::Tr8("Steuerung öffnen") == "Open controls", "Tr8 English");
     CHECK(i18n::Tr8("♪  MUSIK AN") == "♪  MUSIC ON", "Tr8 mit Sonderzeichen: '%s'", i18n::Tr8("♪  MUSIK AN").c_str());
     CHECK(i18n::Tr8("VoiceTune: Sound 3 abspielen") == "VoiceTune: Play sound 3", "Hotkey-Beschreibung");
 

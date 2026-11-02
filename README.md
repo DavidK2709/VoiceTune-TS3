@@ -30,7 +30,7 @@ oder `scripts\package.ps1` ausführen und `build\VoiceTune.ts3_plugin` doppelkli
 In TeamSpeak: *Einstellungen → Plugins → VoiceTune* aktivieren, falls es nicht von selbst geschieht (das Plugin hat einen neuen Namen). Im Menü *Plugins* steht es danach mit eigenem kleinen Icon.
 
 ## Benutzen
-*Plugins → VoiceTune → Einstellungen…* öffnet das Fenster mit **vier Seiten**: **Quelle & Mix** und **Equalizer** für das, was du beim Musikhören laufend anfasst, sowie **Dateien** und **Sounds** für Dateien und Jingles.
+*Plugins → VoiceTune → Steuerung öffnen* öffnet das Fenster. Links die **Seitenleiste** mit vier Symbolen (die Markierung gleitet beim Wechsel mit, die neue Seite blendet weich ein): **Quelle** (Quelle & Mix) und **EQ** (Equalizer) für das, was du beim Musikhören laufend anfasst, sowie **Dateien** und **Sounds** für Dateien und Jingles. Oben steht der Titel der aktuellen Seite.
 Alles, was man einmal einstellt (Sprache, Senden, Titel melden, Hotkeys, Erweitert), liegt hinter dem **Zahnrad** oben rechts neben dem Status-Schild (AKTIV/WARTET/AUS): Es öffnet ein Popup über der Oberfläche.
 
 ### Seite „Quelle & Mix“
