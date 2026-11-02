@@ -30,8 +30,8 @@ oder `scripts\package.ps1` ausführen und `build\VoiceTune.ts3_plugin` doppelkli
 In TeamSpeak: *Einstellungen → Plugins → VoiceTune* aktivieren, falls es nicht von selbst geschieht (das Plugin hat einen neuen Namen). Im Menü *Plugins* steht es danach mit eigenem kleinen Icon.
 
 ## Benutzen
-*Plugins → VoiceTune → Steuerung öffnen* öffnet das Fenster. Links die **Seitenleiste** mit vier Symbolen (die Markierung gleitet beim Wechsel mit, die neue Seite blendet weich ein): **Quelle** (Quelle & Mix) und **EQ** (Equalizer) für das, was du beim Musikhören laufend anfasst, sowie **Dateien** und **Sounds** für Dateien und Jingles. Oben steht der Titel der aktuellen Seite.
-Alles, was man einmal einstellt (Sprache, Senden, Titel melden, Hotkeys, Erweitert), liegt hinter dem **Zahnrad** oben rechts neben dem Status-Schild (AKTIV/WARTET/AUS): Es öffnet ein Popup über der Oberfläche.
+*Plugins → VoiceTune → Steuerung öffnen* öffnet das Fenster. Links die **Seitenleiste** mit fünf Symbolen (die Markierung gleitet beim Wechsel mit, die neue Seite blendet weich ein): **Quelle** (Quelle & Mix) und **EQ** (Equalizer) für das, was du beim Musikhören laufend anfasst, **Dateien** und **Sounds** für Dateien und Jingles sowie **Voicechanger** (Platzhalter, hier entstehen die Stimmeffekte). Oben links steht der Titel der aktuellen Seite, **oben in der Mitte das aktuelle Profil** (Name mit **◀ ▶** zum Durchblättern; ein Klick auf den Namen öffnet die Profil-Verwaltung).
+Alles, was man einmal einstellt (Sprache, Senden, Profile verwalten, Hotkeys, Erweitert), liegt hinter dem **Zahnrad** oben rechts neben dem Status-Schild (AKTIV/WARTET/AUS): Es öffnet ein Popup über der Oberfläche.
 
 ### Seite „Quelle & Mix“
 - **Audio-Quelle**: Kachel-Raster aller Apps mit Audio (Icon, Fenstertitel/Songname). Die Liste ist **live** (jede Sekunde): neue Apps erscheinen von selbst, beendete verschwinden,
@@ -49,8 +49,8 @@ Alles, was man einmal einstellt (Sprache, Senden, Titel melden, Hotkeys, Erweite
 - **Musik-/Mikrofon-Lautstärke**: 0–200 %, rastet bei 100 % ein.
 - **Mikrofon stumm** (Mikrofon-Symbol links neben dem Wert der Mikrofon-Lautstärke): deine Stimme wird nicht gesendet, die Musik läuft weiter. Wirkt auch, wenn gerade keine Musik läuft.
   Der Zustand wird **absichtlich nicht gespeichert** – nach einem Neustart ist das Mikrofon wieder an, damit du es nicht versehentlich stumm lässt.
-- **Profile** (rechts unten): ein Profil ist ein benannter Schnappschuss von Quelle, Lautstärken, Mithören, Equalizer, Qualität und Opus-Schaltern (nicht: Stumm, „Musik einspielen“, Musikmodus). **◀ ▶** blättert durch die Profile und wendet sie sofort an,
-  **Speichern als …** legt eines an (oder aktualisiert das gewählte), **Umbenennen** und **Löschen** (zweiter Klick zur Sicherheit) gelten für das gewählte. Hast du nach dem Anwenden etwas verändert, steht „(geändert)“ daneben. Bis zu 30 Profile; per Hotkey „nächstes Profil“ oder Stream Deck wechselst du reihum.
+- **Profile**: ein Profil ist ein benannter Schnappschuss von Quelle, Lautstärken, Mithören, Equalizer, Qualität und Opus-Schaltern (nicht: Stumm, „Musik einspielen“, Musikmodus). Das aktuelle Profil steht **oben in der Mitte des Fensters**; **◀ ▶** blättert durch die Profile und wendet sie sofort an.
+  Verwaltet wird es im **Zahnrad-Popup** (Karte *Profile*): **Speichern als …** legt eines an (oder aktualisiert das gewählte), **Umbenennen** und **Löschen** (zweiter Klick zur Sicherheit) gelten für das gewählte. Hast du nach dem Anwenden etwas verändert, zeigt ein orangefarbener Punkt am Namen oben „(geändert)“. Bis zu 30 Profile; per Hotkey „nächstes Profil“ oder Stream Deck wechselst du reihum.
 
 ### Seite „Equalizer“
 - **Equalizer** mit **10, 31 oder 61 Bändern** (61 = Sechstel-Oktav-Raster, 20 Hz–20 kHz), je ±12 dB. Mit der Maus Bänder ziehen oder eine Kurve über mehrere
@@ -78,18 +78,22 @@ Alles, was man einmal einstellt (Sprache, Senden, Titel melden, Hotkeys, Erweite
 Die Auswahl wird gespeichert; startet die App später neu, verbindet sich das Plugin automatisch wieder.
 Bei Browsern wird der gesamte Browser-Ton aufgenommen (nicht nur ein Tab).
 
-### Seite „Sounds“ (Soundboard)
-- 8 Plätze für kurze Clips (Jingles, bis 30 s, jedes Format der Dateien-Seite). Eine Datei auf eine Kachel ziehen belegt sie, mehrere Dateien füllen freie Plätze; eine leere Kachel (nur ein „+“) anklicken öffnet den Datei-Dialog. Der Hinweis dazu steht einmal über dem Raster.
-- **Klick** spielt den Clip über Musik und Mikrofon (bis zu 4 gleichzeitig; derselbe Clip startet von vorn). **Rechtsklick**: Umbenennen, Datei ersetzen, Entfernen. **Alle stoppen** beendet alles. Der Regler **Sound-Lautstärke** (0–200 %) gilt für alle Clips.
+### Seite „Sounds“ (Soundboard) und Soundboard-Fenster
+- Ein **Raster aus frei belegbaren Knöpfen** wie bei RP Soundboard: oben stellst du **Zeilen** und **Spalten** (bis 20 × 20, höchstens 400 Knöpfe) mit − / + ein und ob die **Tastenkürzel auf den Knöpfen** angezeigt werden. Standard: 2 × 4. Passt das Raster nicht ins Fenster, scrollt es.
+- **Knopf anlegen:** einen leeren Knopf (nur ein „+“) anklicken oder eine Audio-Datei darauf ziehen (jedes Format der Dateien-Seite, Clips bis 30 s) – es öffnet sich der **Editor** mit *Name*, *Datei*, *Farbe*, *Lautstärke* (0–200 %, pro Knopf) und *Tastenkürzel*. Mehrere Dateien auf einmal füllen freie Knöpfe der Reihe nach (ohne Editor, Name = Dateiname).
+- **Klick** spielt den Clip über Musik und Mikrofon (bis zu 8 gleichzeitig; derselbe Clip startet von vorn). **Rechtsklick** öffnet den Editor (dort auch *Entfernen*). **Ziehen** eines Knopfes auf einen anderen tauscht bzw. verschiebt ihn. **Alle stoppen** beendet alles; der Regler **Lautstärke** unten gilt für alle Knöpfe zusätzlich.
+- **Tastenkürzel:** die ersten 64 Knöpfe haben je einen TeamSpeak-Hotkey (*Sound 1 … 64*). Im Editor legst du ihn per **ändern …** fest (öffnet den Aufnahme-Dialog von TeamSpeak), auf dem Knopf steht er, wenn die Anzeige an ist. Alle Hotkeys findest du außerdem unter *Einstellungen → Hotkeys → Plugins → VoiceTune*.
+- **Abkoppeln:** der Knopf rechts oben (und *Plugins → VoiceTune → Soundboard öffnen* oder der Knopf auf der Seite *Quelle*) öffnet das Soundboard als **eigenes, frei skalierbares Fenster** – es bleibt offen, auch wenn du das Hauptfenster schließt. Dort gibt es zusätzlich den Schalter **Immer oben** (Fenster bleibt vor anderen Fenstern).
 - Clips funktionieren auch ohne Musikquelle und bei stummem Mikrofon; sie gehen durch Optimierung/Begrenzer und werden beim Mithören mitgehört. Beim ersten Abspielen schaltet sich „Musik einspielen“ bei Bedarf ein.
-- Hotkeys *Sound 1 … 8* und *Alle Sounds stoppen*, per Stream Deck `/cmd/sound/<1-8>`. Die Zuordnung (Pfade und Namen) wird gespeichert; Clips werden beim Start neu geladen.
+- Ablage: Pfade, Namen, Farben und Lautstärken stehen in der INI (Abschnitt `[Sounds]`, ein Eintrag je Knopf). Die ersten 64 Clips werden beim Start geladen, die übrigen beim ersten Klick (kurze Verzögerung); bei sehr vielen Clips verwirft das Plugin die am längsten nicht gespielten (Speichergrenze 192 MB) und lädt sie beim nächsten Klick neu. Per Stream Deck: `/cmd/sound/<1-400>`.
+
+### Reiter „Voicechanger“ (Entwicklung)
+Platzhalter für den Voicechanger. Der Spielbereich des Voicechanger-Entwicklers ist bewusst von der restlichen Oberfläche getrennt: die Seite in `src/voicechanger_page.{h,cpp}`, die Klangverarbeitung in `src/voicechanger.{h,cpp}` (Anleitung zum Einhängen in die Engine steht im Kopf von `voicechanger.h`). `config_dialog.cpp` ruft die Seite nur zum Zeichnen auf (Zweig „Seite 4“).
 
 ### Einstellungen (Zahnrad-Popup)
 Das Zahnrad öffnet das Popup, ein zweiter Klick auf das Zahnrad, ein Klick neben das Panel oder **Esc** schließt es. Zwei Spalten, oben das Häufige, unten ein einklappbarer Bereich **Erweitert** (ob er offen ist, merkt sich das Plugin; Standard: zu).
 - **Allgemein**: die **Oberflächensprache** (*Automatisch* richtet sich nach Windows – nicht Deutsch → English –, *Deutsch*, *English*; wirkt sofort) und der Knopf **Hotkeys festlegen …**, der die Hotkey-Einstellungen von TeamSpeak öffnet.
   Die Plugin-Menüeinträge im Plugins-Menü und die Hotkey-Beschreibungen folgen der Sprache erst beim nächsten Start von TeamSpeak.
-- **Titel melden**: bei einem Titelwechsel (Dateititel oder Titel im Fenster der App, z.B. „Artist - Song“ bei Spotify) erscheint eine Zeile *♪ Spielt: …* – standardmäßig im **eigenen Chat**. Optional **im Kanal-Chat**
-  (alle im Kanal sehen es, deshalb standardmäßig aus) oder **in den Client-Metadaten** (dein TeamSpeak-Metadatenfeld, beim Ausschalten wird der alte Wert wiederhergestellt). Gemeldet wird erst, wenn der Titel 3 s stabil ist, nie doppelt, und nur bei eingeschalteter Musik.
 - **Senden**:
   - **Musik immer senden**: überträgt die Musik auch ohne Push-to-Talk/Sprachaktivierung.
   - **Mono einspielen** mischt die Musik als Mono ein.
@@ -116,7 +120,7 @@ Das Zahnrad öffnet das Popup, ein zweiter Klick auf das Zahnrad, ein Klick nebe
     **Grenze:** Ist der Kanal auf *Opus Voice* gestellt, bleibt die Übertragung **mono** (SDK: 48 kHz, mono) – für alle Hörer. Stereo kommt nur mit dem Kanal-Codec *Opus Music* an.
 
 ### Hotkeys
-Im TeamSpeak-Hotkey-Dialog (*Einstellungen → Hotkeys → Plugins → VoiceTune* – oder über „Hotkeys …“ im Fenster) gibt es: Musik an/aus, Mikrofon stumm/laut, Musik lauter/leiser, Datei-Player Play/Pause, nächster/vorheriger Titel, Mithören an/aus, nächstes Profil, Sound 1–8, Alle Sounds stoppen.
+Im TeamSpeak-Hotkey-Dialog (*Einstellungen → Hotkeys → Plugins → VoiceTune* – oder über „Hotkeys …“ im Fenster) gibt es: Musik an/aus, Mikrofon stumm/laut, Musik lauter/leiser, Datei-Player Play/Pause, nächster/vorheriger Titel, Mithören an/aus, nächstes Profil, Sound 1–64, Alle Sounds stoppen.
 Beim Stumm-Hotkey erscheint eine Chat-Zeile „MIKROFON STUMM/AKTIV“.
 
 ### Stream Deck / Fernsteuerung
@@ -149,6 +153,6 @@ build\ts3_host_test.exe build\VoiceTune_win64.dll [--mix 10 out.raw | --monitor 
 ```
 `ts3_host_test` stellt TeamSpeak nach: lädt die DLL, ruft die Exports in Client-Reihenfolge auf und treibt den Mikrofon-Callback im 20-ms-Takt (`--mix`),
 zusätzlich den Wiedergabe-Callback für das Mithören (`--monitor`), löst die Menü-Aktion samt Chat-Meldung aus (`--toggle`) oder öffnet das Fenster und speichert Screenshots (`--ui`).
-Mit den Umgebungsvariablen `AAM_FILES=<Ordner>` (Dateien-Seite per simuliertem Drop), `AAM_UI3=<Ordner>` (Profile, Soundboard) und `AAM_SET=1` (alle Seiten und das Einstellungs-Popup auf Deutsch und Englisch fotografieren, jedes Element des Popups bedienen und die gespeicherten Werte prüfen; Exit-Code 1 bei Abweichung) werden bestimmte Abläufe geprüft bzw. fotografiert
+Mit den Umgebungsvariablen `AAM_FILES=<Ordner>` (Dateien-Seite per simuliertem Drop), `AAM_UI3=<Ordner>` (Profile, Soundboard mit Editor, Ziehen, Raster und Soundboard-Fenster; Exit-Code 1 bei Abweichung) und `AAM_SET=1` (alle Seiten und das Einstellungs-Popup auf Deutsch und Englisch fotografieren, jedes Element des Popups bedienen und die gespeicherten Werte prüfen; Exit-Code 1 bei Abweichung) werden bestimmte Abläufe geprüft bzw. fotografiert
 (`AAM_HOLD=<Sekunden>` lässt das Fenster zum Anschauen offen, `AAM_LIVE=<Sekunden>` lässt es bedienbar offen, um es selbst auszuprobieren);
 `AAM_BITRATE=<bit/s>` setzt die vom nachgestellten TS3 gemeldete Opus-Bitrate. Das Testfenster ist für echte Maus- und Tastatureingaben gesperrt; die Einstellungen landen in `%TEMP%`, nicht in deinem TS3-Ordner.

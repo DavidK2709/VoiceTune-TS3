@@ -11,7 +11,7 @@
 //   preset/<Name>                  Equalizer-Preset (mitgeliefert oder eigen)
 //   profile/<Name> | profile_next  Profil anwenden bzw. naechstes Profil reihum
 //   source/<exe>                   Audio-Quelle waehlen (z.B. spotify.exe)
-//   sound/<1-8> | soundstop        Soundboard-Clip abspielen / alle stoppen
+//   sound/<1-400> | soundstop        Soundboard-Clip abspielen / alle stoppen
 #include <string>
 #include <vector>
 
@@ -24,10 +24,11 @@ bool RunCommandPath(const std::string& path);
 // TS3-Hotkey-Schluesselwort ("toggle", "sound3", "profile_next" ...) -> RunCommand
 bool RunHotkey(const std::string& keyword);
 
-// Alle Hotkey-Schluesselwoerter mit deutscher Beschreibung (fuer ts3plugin_initHotkeys)
+// Alle Hotkey-Schluesselwoerter mit deutscher Beschreibung (fuer ts3plugin_initHotkeys); sound1..sound64 gehoeren zu den ersten 64 Soundboard-Knoepfen
 struct HotkeyDef {
     const char* keyword;
-    const char* description;
+    const char* description; // bei number > 0 mit "%d" fuer die Nummer (Sound-Knoepfe)
+    int         number = 0;
 };
 const std::vector<HotkeyDef>& HotkeyList();
 

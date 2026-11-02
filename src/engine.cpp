@@ -49,8 +49,13 @@ void Engine::Init(const std::wstring& configDir)
     musicMode_  = settings_.musicMode;
     i18n::SetSetting(settings_.language);
     soundGain_  = settings_.soundVolPct / 100.0f;
-    for (int i = 0; i < kSoundSlots; ++i)
-        if (!settings_.sounds[i].path.empty()) sounds_.Load(i, settings_.sounds[i].path);
+    for (int i = 0; i < kSoundSlots; ++i) {
+        const SoundSlot& b = settings_.sounds[i];
+        if (b.path.empty()) continue;
+        sounds_.SetVolume(i, b.volPct);
+        if (i < kSoundHotkeys) sounds_.Load(i, b.path); // Tastenkuerzel-Knoepfe sofort bereit, der Rest laedt beim ersten Klick
+        else sounds_.Register(i, b.path);
+    }
     optimize_   = settings_.optimizeForOpus;
     opusPreviewOn_ = settings_.opusPreview;
     settings_.eqGains.resize(settings_.eqBands, 0.0f);
@@ -904,9 +909,63 @@ void Engine::SoundSetSlot(int slot, const std::wstring& path)
     if (slot < 0 || slot >= kSoundSlots) return;
     sounds_.Load(slot, path);
     std::lock_guard<std::mutex> lk(mutex_);
-    settings_.sounds[slot].path = path;
-    settings_.sounds[slot].name = path.empty() ? L"" : FileTitle(path);
+    SoundSlot& b = settings_.sounds[slot];
+    b.path       = path;
+    b.name       = path.empty() ? L"" : FileTitle(path);
+    if (path.empty()) {
+        b.color  = 0;
+        b.volPct = 100;
+        sounds_.SetVolume(slot, 100);
+    }
     SaveLocked();
+}
+
+void Engine::SoundConfigure(int slot, const std::wstring& path, const std::wstring& name, uint32_t color, int volPct)
+{
+    if (slot < 0 || slot >= kSoundSlots) return;
+    volPct = std::min(200, std::max(0, volPct));
+    bool reload;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        SoundSlot&         b = settings_.sounds[slot];
+        const std::wstring n = presets::Sanitize(name);
+        reload               = b.path != path;
+        b.path               = path;
+        b.name               = path.empty() ? L"" : (n.empty() ? FileTitle(path) : n);
+        b.color              = path.empty() ? 0 : (color & 0xFFFFFF);
+        b.volPct             = path.empty() ? 100 : volPct;
+        SaveLocked();
+    }
+    sounds_.SetVolume(slot, path.empty() ? 100 : volPct);
+    if (reload) sounds_.Load(slot, path);
+}
+
+void Engine::SoundReload(int slot)
+{
+    if (slot < 0 || slot >= kSoundSlots) return;
+    std::wstring path;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        path = settings_.sounds[slot].path;
+    }
+    if (!path.empty()) sounds_.Load(slot, path);
+}
+
+void Engine::SoundSwap(int a, int b)
+{
+    if (a < 0 || b < 0 || a >= kSoundSlots || b >= kSoundSlots || a == b) return;
+    SoundSlot sa, sb;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        std::swap(settings_.sounds[a], settings_.sounds[b]);
+        sa = settings_.sounds[a];
+        sb = settings_.sounds[b];
+        SaveLocked();
+    }
+    sounds_.Load(a, sa.path);
+    sounds_.Load(b, sb.path);
+    sounds_.SetVolume(a, sa.volPct);
+    sounds_.SetVolume(b, sb.volPct);
 }
 
 void Engine::SoundRename(int slot, const std::wstring& name)
@@ -921,7 +980,9 @@ void Engine::SoundRename(int slot, const std::wstring& name)
 
 void Engine::SoundPlay(int slot)
 {
-    if (slot < 0 || slot >= kSoundSlots || sounds_.GetState(slot) != Soundboard::State::Ready) return;
+    if (slot < 0 || slot >= kSoundSlots) return;
+    const Soundboard::State st = sounds_.GetState(slot);
+    if (st != Soundboard::State::Ready && st != Soundboard::State::Unloaded && st != Soundboard::State::Loading) return;
     EnsureEnabled();
     sounds_.Play(slot);
     if (wake_) SetEvent(wake_);
@@ -938,16 +999,52 @@ void Engine::SetSoundVolume(int pct)
     dirty_                = true;
 }
 
+void Engine::SetSoundGrid(int rows, int cols)
+{
+    rows = std::min(kSoundMaxRows, std::max(1, rows));
+    cols = std::min(kSoundMaxCols, std::max(1, cols));
+    while (rows * cols > kSoundSlots) (rows > cols ? rows : cols)--; // nie mehr Felder als Knoepfe
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.soundRows = rows;
+    settings_.soundCols = cols;
+    dirty_              = true;
+}
+
+void Engine::SetSoundShowKeys(bool on)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.soundShowKeys = on;
+    dirty_                  = true;
+}
+
+void Engine::SetSoundPinned(bool on)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.soundPinned = on;
+    dirty_                = true;
+}
+
+Engine::SoundInfo Engine::GetSound(int slot)
+{
+    SoundInfo out;
+    if (slot < 0 || slot >= kSoundSlots) return out;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        const SoundSlot& b = settings_.sounds[slot];
+        out.name           = b.name;
+        out.path           = b.path;
+        out.color          = b.color;
+        out.volPct         = b.volPct;
+    }
+    out.state   = sounds_.GetState(slot);
+    out.seconds = sounds_.Seconds(slot);
+    return out;
+}
+
 std::vector<Engine::SoundInfo> Engine::GetSounds()
 {
     std::vector<SoundInfo> out(kSoundSlots);
-    std::lock_guard<std::mutex> lk(mutex_);
-    for (int i = 0; i < kSoundSlots; ++i) {
-        out[i].name    = settings_.sounds[i].name;
-        out[i].path    = settings_.sounds[i].path;
-        out[i].state   = sounds_.GetState(i);
-        out[i].seconds = sounds_.Seconds(i);
-    }
+    for (int i = 0; i < kSoundSlots; ++i) out[i] = GetSound(i);
     return out;
 }
 

@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -12,6 +13,8 @@
 #include "app_discovery.h"
 #include "commands.h"
 #include "config_dialog.h"
+#include "soundboard_view.h"
+#include "soundboard_window.h"
 #include "engine.h"
 #include "remote.h"
 #include "plugin_definitions.h"
@@ -29,7 +32,7 @@ namespace {
 struct TS3Functions ts3Functions;
 char*               g_pluginId = nullptr;
 
-enum { MENU_ID_TOGGLE = 1, MENU_ID_CONFIG = 2 };
+enum { MENU_ID_TOGGLE = 1, MENU_ID_CONFIG = 2, MENU_ID_SOUNDBOARD = 3 };
 
 void Log(const char* msg) { ts3Functions.logMessage(msg, LogLevel_INFO, "VoiceTune", 0); }
 
@@ -347,7 +350,7 @@ EXPORT const char* ts3plugin_description()
            "• Musikmodus: Musik kommt auch ohne Sprechen durch (umgeht Sprachaktivierung und Sprachfilter, mit Mikro-Gate)\n"
            "• Mithören und Anhören mit einstellbarer Verzögerung und Opus-Vorschau: höre, wie es bei den anderen ankommt\n"
            "• Klang-Optimierung für Opus, Lautstärken, Mikrofon-Stumm, Chat-Meldungen\n"
-           "• Soundboard mit 8 Jingle-Plätzen, Profile (Szenen), globale Hotkeys, Titelanzeige im Chat, Stream-Deck-Schnittstelle\n\n"
+           "• Soundboard mit frei belegbaren Jingle-Knöpfen (Raster, Hotkeys, eigenes Fenster), Profile (Szenen), globale Hotkeys, Titelanzeige im Chat, Stream-Deck-Schnittstelle\n\n"
            "Plays the audio of any Windows app (Spotify, YouTube, Discord …) or your own audio files into your TeamSpeak microphone – with per-app capture, "
            "equalizer, monitoring, Opus preview, soundboard, profiles, hotkeys and a Stream Deck interface. The window is available in German and English.\n\n"
            "Your Sound. Your Voice. Your Way. Your Tune!";
@@ -369,7 +372,26 @@ EXPORT int ts3plugin_init()
     SetHotkeySetupHandler([] {
         if (ts3Functions.showHotkeySetup) ts3Functions.showHotkeySetup();
     });
-    Engine::Get().SetNowPlayingCallback(OnNowPlaying);
+    sbv::SetHotkeyHandlers(
+        [](int slot) { // Tastenkuerzel eines Soundboard-Knopfes: Aufnahme-Dialog von TeamSpeak
+            if (!ts3Functions.requestHotkeyInputDialog || !g_pluginId) return;
+            char keyword[24];
+            std::snprintf(keyword, sizeof(keyword), "sound%d", slot + 1);
+            ts3Functions.requestHotkeyInputDialog(g_pluginId, keyword, 1, nullptr);
+        },
+        [](int slot) -> std::string { // gebundenes Kuerzel (leer = keins)
+            if (!ts3Functions.getHotkeyFromKeyword || !g_pluginId) return std::string();
+            char        keyword[24];
+            std::snprintf(keyword, sizeof(keyword), "sound%d", slot + 1);
+            const char* keywords[1] = {keyword};
+            char        buf[PLUGIN_HOTKEY_BUFSZ] = {};
+            char*       outs[1]                  = {buf};
+            if (ts3Functions.getHotkeyFromKeyword(g_pluginId, keywords, outs, 1, sizeof(buf)) != 0) return std::string();
+            return buf;
+        },
+        [] {
+            if (ts3Functions.showHotkeySetup) ts3Functions.showHotkeySetup();
+        });
     SetCommandNotifier(OnCommandFeedback);
     RemoteSetUnavailableCallback(OnRemoteUnavailable);
     RemoteStart();
@@ -380,6 +402,7 @@ EXPORT int ts3plugin_init()
 EXPORT void ts3plugin_shutdown()
 {
     RemoteStop();
+    CloseSoundboardWindow();
     CloseConfigDialog();
     RestoreMeta();
     Engine::Get().Shutdown();
@@ -415,13 +438,17 @@ EXPORT void ts3plugin_registerPluginID(const char* id)
 
 EXPORT void ts3plugin_initMenus(struct PluginMenuItem*** menuItems, char** menuIcon)
 {
-    *menuItems    = static_cast<PluginMenuItem**>(std::malloc(sizeof(PluginMenuItem*) * 3));
+    *menuItems    = static_cast<PluginMenuItem**>(std::malloc(sizeof(PluginMenuItem*) * 4));
     (*menuItems)[0] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_TOGGLE, Tr8("Musik einspielen: Ein/Aus").c_str(), "toggle.png");
     (*menuItems)[1] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_CONFIG, Tr8("Steuerung öffnen").c_str(), "settings.png");
-    (*menuItems)[2] = nullptr;
+    (*menuItems)[2] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_SOUNDBOARD, Tr8("Soundboard öffnen").c_str(), "plugin.png");
+    (*menuItems)[3] = nullptr;
     *menuIcon       = static_cast<char*>(std::malloc(PLUGIN_MENU_BUFSZ));
     std::strcpy(*menuIcon, "plugin.png");
 }
+
+// Nach requestHotkeyInputDialog meldet TeamSpeak das aufgenommene Kuerzel; es ist dann schon dem Schluesselwort zugeordnet - nichts zu tun
+EXPORT void ts3plugin_onHotkeyRecordedEvent(const char* keyword, const char* key) {}
 
 EXPORT void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum PluginMenuType type, int menuItemID, uint64 selectedItemID)
 {
@@ -430,6 +457,8 @@ EXPORT void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum Plu
         Engine::Get().SetEnabled(!Engine::Get().GetSettings().enabled); // die Chat-Meldung kommt aus OnStateChanged
     } else if (menuItemID == MENU_ID_CONFIG) {
         OpenConfigDialog();
+    } else if (menuItemID == MENU_ID_SOUNDBOARD) {
+        OpenSoundboardWindow();
     }
 }
 
@@ -444,7 +473,8 @@ EXPORT void ts3plugin_initHotkeys(struct PluginHotkey*** hotkeys)
         auto* h = static_cast<PluginHotkey*>(std::malloc(sizeof(PluginHotkey)));
         std::memset(h, 0, sizeof(*h));
         std::strncpy(h->keyword, list[i].keyword, PLUGIN_HOTKEY_BUFSZ - 1);
-        std::strncpy(h->description, Tr8(list[i].description).c_str(), PLUGIN_HOTKEY_BUFSZ - 1);
+        if (list[i].number > 0) std::snprintf(h->description, PLUGIN_HOTKEY_BUFSZ, Tr8(list[i].description).c_str(), list[i].number);
+        else std::strncpy(h->description, Tr8(list[i].description).c_str(), PLUGIN_HOTKEY_BUFSZ - 1);
         (*hotkeys)[i] = h;
     }
     (*hotkeys)[list.size()] = nullptr;

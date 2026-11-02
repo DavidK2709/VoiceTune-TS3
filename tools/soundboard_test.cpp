@@ -161,10 +161,10 @@ int main(int argc, char** argv)
         Soundboard sb;
         sb.Play(0);
         sb.Play(-1);
-        sb.Play(99);
-        sb.LoadMemory(99, Constant(0.1, 1));
+        sb.Play(Soundboard::kSlots);
+        sb.LoadMemory(Soundboard::kSlots, Constant(0.1, 1));
         sb.Clear(-3);
-        CHECK(!sb.Active() && sb.GetState(0) == Soundboard::State::Empty && sb.GetState(99) == Soundboard::State::Empty, "leere/ungueltige Slots tun nichts");
+        CHECK(!sb.Active() && sb.GetState(0) == Soundboard::State::Empty && sb.GetState(Soundboard::kSlots) == Soundboard::State::Empty, "leere/ungueltige Slots tun nichts");
         sb.LoadMemory(0, std::vector<int16_t>());
         CHECK(sb.GetState(0) == Soundboard::State::Failed, "leerer Clip = Failed");
         sb.LoadMemory(0, Constant(0.1, 1000));
@@ -172,13 +172,44 @@ int main(int argc, char** argv)
         sb.Play(0);
         CHECK(!sb.Active() && sb.GetState(0) == Soundboard::State::Empty, "geleerter Slot spielt nicht");
     }
+    // 7b. 400 Knoepfe, Lautstaerke je Knopf, bis zu 8 gleichzeitige Stimmen
+    {
+        Soundboard sb;
+        static_assert(Soundboard::kSlots == 400 && Soundboard::kVoices == 8, "Soundboard-Groessen");
+        sb.LoadMemory(399, Constant(0.2, 8000));
+        sb.SetVolume(399, 50);
+        sb.Play(399);
+        CHECK(sb.GetState(399) == Soundboard::State::Ready && Render(sb, 960)[10] == 4000, "Knopf 400 mit 50 %% Lautstaerke");
+        sb.SetVolume(399, 500); // wird auf 200 % begrenzt
+        sb.Play(399);
+        CHECK(Render(sb, 960)[10] == 16000, "Lautstaerke auf 200 %% begrenzt");
+        for (int i = 0; i < 8; ++i) {
+            sb.LoadMemory(i, Constant(1.0, 1000));
+            sb.Play(i);
+        }
+        CHECK(Render(sb, 960)[10] == 8000, "8 Stimmen addieren sich: %d", Render(sb, 960)[10]);
+    }
+    // 7c. Speicherbudget: aeltester Clip wird verworfen; ohne Pfad (Speicher-Clip) ist er danach leer
+    {
+        Soundboard sb;
+        const size_t clipBytes = 48000 * 2 * sizeof(int16_t); // 1 s
+        sb.SetBudget(clipBytes * 2 + 100);
+        sb.LoadMemory(0, Constant(1.0, 100));
+        sb.LoadMemory(1, Constant(1.0, 200));
+        sb.Play(0); // Slot 0 ist juenger als Slot 1
+        Render(sb, 960);
+        sb.LoadMemory(2, Constant(1.0, 300));
+        CHECK(sb.GetState(1) == Soundboard::State::Empty && sb.GetState(0) == Soundboard::State::Ready && sb.GetState(2) == Soundboard::State::Ready,
+              "aeltester (Slot 2) verworfen: %d %d %d", static_cast<int>(sb.GetState(0)), static_cast<int>(sb.GetState(1)), static_cast<int>(sb.GetState(2)));
+        CHECK(sb.CachedBytes() <= clipBytes * 2 + 100, "Budget eingehalten: %zu", sb.CachedBytes());
+    }
     // 8. Aus Dateien laden
     if (argc > 1) {
         const std::string  dir = argv[1];
         auto               wide = [](const std::string& s) { return std::wstring(s.begin(), s.end()); };
         Soundboard         sb;
-        sb.Load(0, wide(dir + "\\tone.wav"));
-        sb.Load(1, wide(dir + "\\tone.mp3"));
+        sb.Load(0, wide(dir + "/tone.wav"));
+        sb.Load(1, wide(dir + "/tone.mp3"));
         sb.Load(2, wide(dir + "\\gibt-es-nicht.wav"));
         CHECK(sb.GetState(0) == Soundboard::State::Loading || sb.GetState(0) == Soundboard::State::Ready, "Laden laeuft im Hintergrund");
         CHECK(WaitFor(sb, 0, Soundboard::State::Ready) && std::fabs(sb.Seconds(0) - 6.0) < 0.1, "wav geladen: %.2f s", sb.Seconds(0));
@@ -189,10 +220,10 @@ int main(int argc, char** argv)
         CHECK(Peak(out, 100, 2000) > 300, "Datei klingt (Spitze %d)", Peak(out, 100, 2000));
 
         // Neu belegen waehrend geladen wird: nur das Letzte zaehlt; Leeren waehrend des Ladens bleibt leer
-        sb.Load(3, wide(dir + "\\tone.mp3"));
-        sb.Load(3, wide(dir + "\\tone.wav"));
+        sb.Load(3, wide(dir + "/tone.mp3"));
+        sb.Load(3, wide(dir + "/tone.wav"));
         CHECK(WaitFor(sb, 3, Soundboard::State::Ready), "neu belegt");
-        sb.Load(4, wide(dir + "\\tone.mp3"));
+        sb.Load(4, wide(dir + "/tone.mp3"));
         sb.Clear(4);
         Sleep(1500);
         CHECK(sb.GetState(4) == Soundboard::State::Empty && sb.Seconds(4) == 0, "Leeren waehrend des Ladens bleibt leer");
@@ -205,6 +236,32 @@ int main(int argc, char** argv)
         sb.Load(5, longWav);
         CHECK(WaitFor(sb, 5, Soundboard::State::Ready) && std::fabs(sb.Seconds(5) - Soundboard::kMaxSeconds) < 0.05, "40 s Datei auf 30 s gekuerzt: %.2f s", sb.Seconds(5));
         DeleteFileW(longWav.c_str());
+
+        // Register: Pfad merken ohne zu laden; Play laedt im Hintergrund und spielt dann von selbst
+        Soundboard reg;
+        reg.Register(6, wide(dir + "/tone.wav"));
+        CHECK(reg.GetState(6) == Soundboard::State::Unloaded && !reg.Active(), "registriert, nicht geladen");
+        reg.Play(6);
+        CHECK(reg.Active() || reg.GetState(6) == Soundboard::State::Loading || reg.GetState(6) == Soundboard::State::Ready, "Play auf verworfenem Clip");
+        CHECK(WaitFor(reg, 6, Soundboard::State::Ready), "nachgeladen");
+        Sleep(100);
+        const auto late = Render(reg, 9600);
+        CHECK(Peak(late, 100, 2000) > 300, "nachgeladener Clip spielt von selbst (Spitze %d)", Peak(late, 100, 2000));
+        reg.Register(6, L"");
+        CHECK(reg.GetState(6) == Soundboard::State::Empty, "Register mit leerem Pfad leert");
+
+        // Budget mit Dateien: zwei 6-s-Clips (je 1,1 MB) bei Budget fuer einen -> der aeltere wird verworfen und beim Klick neu geladen
+        Soundboard small;
+        small.SetBudget(48000 * 2 * sizeof(int16_t) * 7);
+        small.Load(0, wide(dir + "/tone.wav"));
+        CHECK(WaitFor(small, 0, Soundboard::State::Ready), "Budget-Test: Clip 1");
+        small.Load(1, wide(dir + "/tone.wav"));
+        CHECK(WaitFor(small, 1, Soundboard::State::Ready), "Budget-Test: Clip 2");
+        CHECK(small.GetState(0) == Soundboard::State::Unloaded && small.Seconds(0) > 5.5, "aelterer Clip verworfen (Unloaded, Dauer bleibt bekannt)");
+        small.Play(0);
+        CHECK(WaitFor(small, 0, Soundboard::State::Ready), "wieder geladen");
+        Sleep(100);
+        CHECK(Peak(Render(small, 9600), 100, 2000) > 300 && small.GetState(1) == Soundboard::State::Unloaded, "spielt, der andere wurde verworfen");
     } else {
         std::printf("(Dateitests uebersprungen: Ordner mit tone.wav/tone.mp3 als Argument angeben)\n");
     }

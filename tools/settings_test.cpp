@@ -93,8 +93,13 @@ int main()
                   t.profiles.NextAfter(L"unbekannt") == L"Stream 'Abend'", "Vorschlag und Reihum");
         t.profileName = L"Zocken";
         t.soundVolPct = 150;
-        t.sounds[0] = {L"C:\\Sounds\\airhorn.wav", L"Hupe"};
-        t.sounds[7] = {L"D:\\Töne\\Ärger.mp3", L"Ärger"};
+        t.sounds[0] = {L"C:\\Sounds\\airhorn.wav", L"Hupe", 0xC0392B, 150};
+        t.sounds[7] = {L"D:\\Töne\\Ärger.mp3", L"Ärger | Mix", 0, 100};
+        t.sounds[399] = {L"E:\\x.wav", L"Letzter", 0x00FF7F, 20};
+        t.soundRows     = 18;
+        t.soundCols     = 17;
+        t.soundShowKeys = false;
+        t.soundPinned   = true;
         t.nowPlayingChat    = false;
         t.nowPlayingChannel = true;
         t.nowPlayingMeta    = true;
@@ -113,13 +118,17 @@ int main()
         if (const Profile* p = u.profiles.Find(L"Zocken")) CHECK(p->targetExe == L"chrome.exe" && p->eqBands == 10 && p->eqGains.size() == 10 && p->eqGains[3] == 2.0f, "Profil 2");
         else CHECK(false, "Profil 2 fehlt");
         CHECK(u.soundVolPct == 150 && u.sounds[0].path == L"C:\\Sounds\\airhorn.wav" && u.sounds[0].name == L"Hupe" && u.sounds[7].path == L"D:\\Töne\\Ärger.mp3" &&
-                  u.sounds[7].name == L"Ärger" && u.sounds[3].path.empty(), "Soundboard-Slots");
+                  u.sounds[7].name == L"Ärger | Mix" && u.sounds[3].path.empty(), "Soundboard-Slots");
+        CHECK(u.sounds[0].color == 0xC0392B && u.sounds[0].volPct == 150 && u.sounds[7].color == 0 && u.sounds[7].volPct == 100 && u.sounds[399].path == L"E:\\x.wav" &&
+                  u.sounds[399].name == L"Letzter" && u.sounds[399].color == 0x00FF7F && u.sounds[399].volPct == 20,
+              "Knopf-Farbe, Lautstaerke und letzter Knopf (400)");
+        CHECK(u.soundRows == 18 && u.soundCols == 17 && !u.soundShowKeys && u.soundPinned, "Raster, Tastenkuerzel anzeigen, Fenster oben");
         CHECK(!u.nowPlayingChat && u.nowPlayingChannel && u.nowPlayingMeta && u.language == 2, "Now-Playing und Sprache");
         CHECK(u.advancedOpen, "Erweitert aufgeklappt gespeichert");
 
         // Standardwerte einer leeren INI
         const Settings d = LoadSettings(ini + L".gibtsnicht");
-        CHECK(d.nowPlayingChat && !d.nowPlayingChannel && !d.nowPlayingMeta && d.language == 0 && d.soundVolPct == 100 && d.profiles.items.empty() && !d.advancedOpen, "Standardwerte (Erweitert zu)");
+        CHECK(d.nowPlayingChat && !d.nowPlayingChannel && !d.nowPlayingMeta && d.language == 0 && d.soundVolPct == 100 && d.soundRows == 2 && d.soundCols == 4 && d.soundShowKeys && !d.soundPinned && d.profiles.items.empty() && !d.advancedOpen, "Standardwerte (Erweitert zu)");
 
         // Obergrenze der Profile
         profiles::ProfileBook many;

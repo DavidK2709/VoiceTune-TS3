@@ -146,17 +146,27 @@ public:
     // Name der aktuellen Quelle: laufender Dateititel oder die gewaehlte App ("Spotify")
     std::wstring SourceLabel();
 
-    // ---- Soundboard (8 Slots mit kurzen Clips, die ueber die Musik gespielt werden). Slots sind 0..7; alle Befehle sind aus jedem Thread aufrufbar.
+    // ---- Soundboard (bis zu 400 Knoepfe mit kurzen Clips, die ueber die Musik gespielt werden). Slots sind 0..399 (Knopf = Slot + 1), das Raster
+    // (Zeilen x Spalten) legt fest, wie viele davon sichtbar sind. Alle Befehle sind aus jedem Thread aufrufbar.
     struct SoundInfo {
         std::wstring      name, path;
         Soundboard::State state   = Soundboard::State::Empty;
         double            seconds = 0;
+        uint32_t          color   = 0;   // 0xRRGGBB, 0 = Standardfarbe
+        int               volPct  = 100; // Lautstaerke dieses Knopfes
     };
-    void                   SoundSetSlot(int slot, const std::wstring& path); // Datei zuweisen (leer = Slot leeren), Name = Dateiname ohne Endung; wird gespeichert
+    void                   SoundSetSlot(int slot, const std::wstring& path); // Datei zuweisen (leer = Knopf leeren), Name = Dateiname ohne Endung; wird gespeichert
+    void                   SoundConfigure(int slot, const std::wstring& path, const std::wstring& name, uint32_t color, int volPct); // Editor: alles auf einmal
+    void                   SoundReload(int slot); // Datei erneut laden (nach einem Fehler)
+    void                   SoundSwap(int a, int b); // zwei Knoepfe tauschen (Ziehen im Raster)
     void                   SoundRename(int slot, const std::wstring& name);
     void                   SoundPlay(int slot);   // schaltet bei Bedarf "Musik einspielen" ein (wie Play im Datei-Player)
     void                   SoundStop();           // alle Clips stoppen
-    void                   SetSoundVolume(int pct); // 0..200
+    void                   SetSoundVolume(int pct); // Gesamtlautstaerke 0..200
+    void                   SetSoundGrid(int rows, int cols);
+    void                   SetSoundShowKeys(bool on);
+    void                   SetSoundPinned(bool on);
+    SoundInfo              GetSound(int slot);
     std::vector<SoundInfo> GetSounds();
 
     // Now-Playing: meldet einen Titelwechsel (Dateititel oder Fenstertitel der App, bereinigt), sobald er >= 3 s stabil ist und "Musik einspielen" an ist.

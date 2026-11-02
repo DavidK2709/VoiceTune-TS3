@@ -52,13 +52,13 @@ Jeder Befehl antwortet mit dem neuen Zustand (gleiches JSON wie `/state`).
 | `profile/<Name>` | Profil anwenden (Quelle, Lautstärken, Mithören, Equalizer, Qualität, Opus) |
 | `profile_next` | Nächstes Profil reihum |
 | `source/<exe>` | Audio-Quelle wählen, z.B. `source/spotify.exe` |
-| `sound/<1-8>` | Soundboard-Clip abspielen (leere Plätze tun nichts; schaltet bei Bedarf „Musik einspielen“ ein) |
+| `sound/<1-400>` | Soundboard-Clip abspielen (leere Plätze tun nichts; schaltet bei Bedarf „Musik einspielen“ ein) |
 | `soundstop` | Alle Soundboard-Clips stoppen |
 | `playpause` | Datei-Player: Pause/Weiter bzw. ersten Titel starten |
 | `next` / `prev` | Datei-Player: nächster / vorheriger Titel |
 | `stop` | Datei-Player stoppen |
 
-Unbekannter Befehl, unbekannter Name oder ungültiges Argument (z.B. `musicvol/999`, `sound/9`): `404` mit `{"error":"unknown command"}`. Fehlender Header: `403`.
+Unbekannter Befehl, unbekannter Name oder ungültiges Argument (z.B. `musicvol/999`, `sound/401`): `404` mit `{"error":"unknown command"}`. Fehlender Header: `403`.
 
 ## Listen abfragen
 
@@ -68,7 +68,7 @@ Damit sich Knöpfe passend zu den vorhandenen Namen belegen lassen:
 |---|---|
 | `GET /presets` | `{"presets":["Flach","Bass+", …],"current":"Flach"}` (mitgelieferte zuerst, dann eigene) |
 | `GET /profiles` | `{"profiles":["Abend","Zocken"],"current":"Abend"}` |
-| `GET /sounds` | `{"sounds":[{"slot":1,"name":"Hupe","ready":true}, … 8 Einträge]}` |
+| `GET /sounds` | `{"rows":2,"cols":4,"sounds":[{"slot":1,"name":"Hupe","ready":true}, …]}` – nur belegte Knöpfe, `slot` = Knopfnummer (zeilenweise im Raster) |
 
 ## Beispiele
 
@@ -103,7 +103,7 @@ Zum Prüfen, ob die Schnittstelle läuft, reicht im Browser `http://127.0.0.1:19
 ## Hotkeys statt Stream Deck
 
 Dieselben Befehle gibt es als TeamSpeak-Hotkeys (*Einstellungen → Hotkeys → Plugins → VoiceTune*, oder im VoiceTune-Fenster der Knopf „Hotkeys …“): Musik an/aus, Mikrofon stumm, Musik lauter/leiser, Play/Pause, Weiter/Zurück,
-Mithören, nächstes Profil, Sound 1–8 und „Alle Sounds stoppen“. Ein Hotkey braucht kein Stream Deck und keinen Port.
+Mithören, nächstes Profil, Sound 1–64 und „Alle Sounds stoppen“. Ein Hotkey braucht kein Stream Deck und keinen Port.
 
 ## Hinweise
 

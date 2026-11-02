@@ -135,6 +135,11 @@ int main(int argc, char** argv)
     f.getChannelVariableAsInt    = FakeChannelInt;
     f.getEncodeConfigValue       = FakeEncodeConfig;
     f.showHotkeySetup            = [] { std::printf("  [ts3] showHotkeySetup()\n"); };
+    f.requestHotkeyInputDialog   = [](const char*, const char* keyword, int, void*) { std::printf("  [ts3] requestHotkeyInputDialog(%s)\n", keyword); };
+    f.getHotkeyFromKeyword       = [](const char*, const char** keywords, char** hotkeys, size_t, size_t bufSize) -> unsigned int {
+        std::snprintf(hotkeys[0], bufSize, "%s", std::strcmp(keywords[0], "sound1") == 0 ? "Strg+F5" : ""); // nur Knopf 1 hat ein Kuerzel
+        return 0;
+    };
     f.getCurrentServerConnectionHandlerID = [] { return static_cast<uint64>(1); };
     setFn(f);
     int r = init();
@@ -290,6 +295,29 @@ int main(int argc, char** argv)
                 std::printf("Screenshot %dx%d -> %s\n", cw, ch, path.c_str());
             };
             shoot(argv[3]);
+            auto shootHwnd = [&](HWND hw, const std::string& path) { // Foto eines beliebigen Fensters dieses Prozesses
+                RECT r;
+                GetWindowRect(hw, &r);
+                const int cw = r.right - r.left, ch = r.bottom - r.top;
+                HDC       sdc = GetDC(nullptr), mdc = CreateCompatibleDC(sdc);
+                HBITMAP   bmp = CreateCompatibleBitmap(sdc, cw, ch);
+                SelectObject(mdc, bmp);
+                PrintWindow(hw, mdc, 2 /*PW_RENDERFULLCONTENT*/);
+                BITMAPINFOHEADER bi{sizeof(bi), cw, -ch, 1, 32, BI_RGB, 0, 0, 0, 0, 0};
+                std::vector<unsigned char> px(static_cast<size_t>(cw) * ch * 4);
+                GetDIBits(mdc, bmp, 0, ch, px.data(), reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS);
+                BITMAPFILEHEADER fh{0x4D42, static_cast<DWORD>(sizeof(fh) + sizeof(bi) + px.size()), 0, 0, sizeof(fh) + sizeof(bi)};
+                if (FILE* fl = std::fopen(path.c_str(), "wb")) {
+                    std::fwrite(&fh, sizeof(fh), 1, fl);
+                    std::fwrite(&bi, sizeof(bi), 1, fl);
+                    std::fwrite(px.data(), 1, px.size(), fl);
+                    std::fclose(fl);
+                }
+                DeleteObject(bmp);
+                DeleteDC(mdc);
+                ReleaseDC(nullptr, sdc);
+                std::printf("Screenshot %dx%d -> %s\n", cw, ch, path.c_str());
+            };
 
             // Nur "Dateien": Drag & Drop simulieren (WM_DROPFILES wie vom Explorer), Mikrofon-Ausgabe aufzeichnen, Bedienung pruefen
             if (const char* fdir = std::getenv("AAM_FILES")) {
@@ -377,42 +405,38 @@ int main(int argc, char** argv)
                     std::printf("  %s  %s\n", ok ? "ok  " : "FEHL", what);
                     if (!ok) ++fails;
                 };
-                const int gearX = 760, gearY = 36; // Zahnrad neben dem Status-Schild
+                const int gearX = 768, gearY = 36; // Zahnrad neben dem Status-Schild
                 const std::string base = argv[3];
                 auto shotPages = [&](const char* prefix) {
-                    for (int i = 0; i < 4; ++i) {
-                        click(44, 126 + i * 76);  // Seitenleiste
+                    for (int i = 0; i < 5; ++i) {
+                        click(48, 126 + i * 76);  // Seitenleiste
                         Sleep(700);
                         shoot(base + prefix + std::to_string(i) + ".bmp");
                     }
                 };
 
-                shotPages("set_de");                       // alle 4 Seiten, Deutsch
+                shotPages("set_de");                       // alle 5 Seiten, Deutsch
                 click(gearX, gearY);                       // Zahnrad: Einstellungs-Popup auf
                 Sleep(500);
-                shoot(base + "set_de4.bmp");               // Popup, "Erweitert" zu
-                click(498, 450);                           // "Erweitert" aufklappen
+                shoot(base + "set_depop.bmp");             // Popup, "Erweitert" zu
+                click(506, 442);                           // "Erweitert" aufklappen
                 Sleep(500);
                 shoot(base + "set_deadv.bmp");
 
                 // Jedes Element bedienen
-                click(298, 152);                           // Sprache: Deutsch
-                click(178, 152);                            // Sprache: Automatisch
-                click(418, 152);                           // Sprache: English
-                click(298, 235);                           // Hotkeys festlegen ...
-                click(448, 335);                           // Titel melden: eigener Chat aus
-                click(448, 363);                           // Kanal-Chat an
-                click(448, 391);                           // Client-Metadaten an
-                click(848, 121);                           // Musik immer senden aus
-                click(848, 171);                           // Mono an
-                click(578, 246);                           // Qualitaet: niedrige Latenz
-                click(448, 495);                           // Musikmodus aus
-                click(288, 545);                           // Mikro-Gate irgendwo in der Mitte
-                click(848, 495);                           // Opus optimieren aus
-                click(848, 545);                           // Opus-Vorschau aus
+                click(306, 152);                           // Sprache: Deutsch
+                click(186, 152);                            // Sprache: Automatisch
+                click(426, 152);                           // Sprache: English
+                click(306, 235);                           // Hotkeys festlegen ...
+                click(856, 121);                           // Musik immer senden aus
+                click(856, 171);                           // Mono an
+                click(586, 246);                           // Qualitaet: niedrige Latenz
+                click(456, 487);                           // Musikmodus aus
+                click(356, 537);                           // Mikro-Gate irgendwo in der Mitte
+                click(856, 487);                           // Opus optimieren aus
+                click(856, 537);                           // Opus-Vorschau aus
                 Sleep(1800);                               // Einstellungen werden im Sekundentakt gespeichert
                 check(val("Language", -1) == 2, "Sprache English gespeichert");
-                check(val("NowPlayingChat", -1) == 0 && val("NowPlayingChannel", -1) == 1 && val("NowPlayingMeta", -1) == 1, "Titel melden: Chat aus, Kanal an, Metadaten an");
                 check(val("AlwaysSend", -1) == 0, "Musik immer senden aus");
                 check(val("Mono", -1) == 1, "Mono an");
                 check(val("Quality", -1) == 0, "Qualitaet niedrige Latenz");
@@ -423,15 +447,15 @@ int main(int argc, char** argv)
                 check(val("AdvancedOpen", -1) == 1, "Erweitert aufgeklappt gespeichert");
 
                 shoot(base + "set_enadv.bmp");             // Englisch, aufgeklappt, alles umgestellt
-                click(498, 450);                           // Erweitert zuklappen
+                click(506, 442);                           // Erweitert zuklappen
                 Sleep(1400);
                 check(val("AdvancedOpen", -1) == 0, "Erweitert zugeklappt gespeichert");
                 click(400, 612);                            // Klick neben das Panel schliesst das Popup
                 Sleep(300);
                 shoot(base + "set_enclosed.bmp");          // zu: Hauptseite wieder sichtbar und bedienbar
-                shotPages("set_en");                       // alle 4 Seiten, English
+                shotPages("set_en");                       // alle 5 Seiten, English
                 click(gearX, gearY);                       // Popup wieder auf
-                click(178, 152);                            // zurueck auf Automatisch (die Einstellungen landen nur in %TEMP%)
+                click(186, 152);                            // zurueck auf Automatisch (die Einstellungen landen nur in %TEMP%)
                 Sleep(500);
                 std::printf("UI-Pruefung: %d Fehler\n", fails);
                 micStop = true;
@@ -445,9 +469,9 @@ int main(int argc, char** argv)
             if (const char* live = std::getenv("AAM_LIVE")) {
                 std::printf("Fenster offen fuer %s s\n", live);
                 if (std::getenv("AAM_OPENSET")) { // Zahnrad klicken: Einstellungs-Popup gleich offen
-                    SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(760, 36));
-                    SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(760, 36));
-                    SendMessageW(w, WM_LBUTTONUP, 0, MAKELPARAM(760, 36));
+                    SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(768, 36));
+                    SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(768, 36));
+                    SendMessageW(w, WM_LBUTTONUP, 0, MAKELPARAM(768, 36));
                 }
                 Sleep(static_cast<DWORD>(std::atoi(live)) * 1000);
                 micStop = true;
@@ -490,44 +514,117 @@ int main(int argc, char** argv)
                 };
                 const std::string  base = argv[3];
                 const std::wstring d    = std::wstring(sdir, sdir + std::strlen(sdir));
-                // Seite 0: Profil speichern (Namenseingabe), Wert aendern -> "(geaendert)"
-                click(594, 561);                         // "Speichern als ..."
+                int                fails = 0;
+                auto               check = [&](bool ok, const char* what) {
+                    std::printf("  %s  %s\n", ok ? "ok  " : "FEHL", what);
+                    if (!ok) ++fails;
+                };
+                char tmp[MAX_PATH];
+                GetEnvironmentVariableA("TEMP", tmp, MAX_PATH);
+                const std::string ini = std::string(tmp) + "\\voicetune.ini";
+                auto              num = [&](const char* sec, const char* key, int def) { return static_cast<int>(GetPrivateProfileIntA(sec, key, def, ini.c_str())); };
+                auto              str = [&](const char* sec, const char* key) {
+                    char buf[1024] = {};
+                    GetPrivateProfileStringA(sec, key, "", buf, sizeof(buf), ini.c_str());
+                    return std::string(buf);
+                };
+                auto drag = [&](int x0, int y0, int x1, int y1) { // Knopf mit gedrueckter Maus ziehen
+                    SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(x0, y0));
+                    SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x0, y0));
+                    for (int i = 1; i <= 8; ++i) SendMessageW(w, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(x0 + (x1 - x0) * i / 8, y0 + (y1 - y0) * i / 8));
+                    SendMessageW(w, WM_LBUTTONUP, 0, MAKELPARAM(x1, y1));
+                };
+                const int gearX = 768, gearY = 36;
+
+                // Profil speichern: Zahnrad -> "Speichern als ..." (Namenseingabe); der Name steht danach oben in der Mitte
+                click(gearX, gearY);
+                Sleep(500);
+                shoot(base + "p0.bmp");                  // Popup mit Profil-Karte
+                click(207, 374);                         // "Speichern als ..."
                 type(L"Abend");
                 Sleep(400);
                 shoot(base + "p1.bmp");                  // Eingabe offen
                 enter();
                 Sleep(400);
                 shoot(base + "p2.bmp");                  // gespeichert, Meldung in der Fusszeile
-                click(213, 483);                         // Musik-Lautstaerke aendern
+                click(400, 612);                         // Popup schliessen
+                Sleep(400);
+                click(221, 483);                         // Musik-Lautstaerke aendern
                 Sleep(500);
-                shoot(base + "p3.bmp");                  // Profil "(geaendert)"
-                // Seite Sounds
-                click(44, 354);
-                drop({d + L"\\tone.wav", d + L"\\tone.mp3"}, 0, 0);
+                shoot(base + "p3.bmp");                  // Profil oben mit Markierung "geaendert"
+                click(627, 36);                          // Pfeil rechts neben dem Namen: naechstes Profil (nur eines vorhanden -> bleibt)
+                Sleep(300);
+
+                // Seite Sounds: zwei Dateien auf Knopf 1 ziehen -> Knopf 1 und 2
+                click(48, 354);
+                Sleep(500);
+                shoot(base + "s0.bmp");                  // leeres Raster
+                drop({d + L"\\tone.wav", d + L"\\tone.mp3"}, 215, 188);
                 Sleep(1800);
-                shoot(base + "s1.bmp");                  // zwei Kacheln belegt
-                click(213, 217);                         // Kachel 1 spielen
+                shoot(base + "s1.bmp");                  // zwei Knoepfe belegt (Knopf 1 mit Tastenkuerzel)
+                click(215, 188);                         // Knopf 1 spielen
                 Sleep(150);
                 shoot(base + "s2.bmp");                  // Aufleuchten
-                rclick(403, 217);                        // Menue an Kachel 2
-                SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(419, 239));
+                rclick(406, 188);                        // Rechtsklick auf Knopf 2: Editor
+                Sleep(200);
                 shoot(base + "s3.bmp");
-                click(419, 239);                         // "Umbenennen"
                 type(L"Hupe laut");
-                Sleep(300);
-                shoot(base + "s4.bmp");                  // Namenseingabe
-                enter();
-                Sleep(400);
+                click(319, 334);                         // Farbe rot
+                click(569, 390);                         // Lautstaerke ~150 %
+                Sleep(200);
+                shoot(base + "s4.bmp");                  // Editor ausgefuellt
+                click(676, 498);                         // Speichern
+                Sleep(1800);
                 shoot(base + "s5.bmp");
-                click(44, 126);                          // zurueck auf Seite 0
+                check(str("Sounds", "Slot2").find("C0392B|") == 0 && str("Sounds", "Slot2").find("Hupe laut") != std::string::npos, "Knopf 2: Name und Farbe gespeichert");
+                {
+                    const std::string v = str("Sounds", "Slot2");
+                    const size_t      p1 = v.find('|');
+                    const int         vol = p1 == std::string::npos ? -1 : std::atoi(v.c_str() + p1 + 1);
+                    check(vol > 120 && vol <= 200, "Knopf 2: Lautstaerke ~150 %");
+                }
+                // Knopf 1 auf Feld 5 (zweite Zeile) ziehen = verschieben
+                drag(215, 188, 215, 316);
+                Sleep(1800);
+                check(str("Sounds", "Slot5").find("tone") != std::string::npos && str("Sounds", "Slot1").empty(), "Knopf 1 per Ziehen auf Feld 5 verschoben");
+                // Raster: Zeilen +1, Spalten +1, Tastenkuerzel-Anzeige aus
+                click(264, 102);
+                click(438, 102);
+                click(494, 102);
+                Sleep(1800);
+                check(num("VoiceTune", "SoundRows", 0) == 3 && num("VoiceTune", "SoundCols", 0) == 5 && num("VoiceTune", "SoundShowKeys", 1) == 0, "Raster 3 x 5, Tastenkuerzel-Anzeige aus");
+                shoot(base + "s6.bmp");
+                // Abkoppeln: eigenes Soundboard-Fenster
+                click(820, 102);
+                Sleep(1500);
+                HWND sb = FindWindowW(L"VoiceTuneSoundboard", nullptr);
+                check(sb != nullptr && IsWindowVisible(sb), "Soundboard-Fenster offen");
+                if (sb) {
+                    RECT sr;
+                    GetWindowRect(sb, &sr);
+                    check(sr.right - sr.left >= 560 && sr.bottom - sr.top >= 460, "Soundboard-Fenster hat Mindestgroesse");
+                    SendMessageW(sb, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(300, 300)); // irgendwo klicken schadet nicht
+                    SendMessageW(sb, WM_LBUTTONUP, 0, MAKELPARAM(300, 300));
+                    Sleep(300);
+                    shootHwnd(sb, base + "s7.bmp");
+                    PostMessageW(sb, WM_CLOSE, 0, 0);
+                    Sleep(800);
+                    check(!IsWindow(sb) || !IsWindowVisible(sb), "Soundboard-Fenster schliesst");
+                }
+                // Voicechanger-Reiter
+                click(48, 430);
+                Sleep(600);
+                shoot(base + "v0.bmp");
+                click(48, 126);                          // zurueck auf Seite 0
                 Sleep(400);
                 shoot(base + "p4.bmp");
+                std::printf("UI3-Pruefung: %d Fehler\n", fails);
                 if (const char* hold = std::getenv("AAM_HOLD")) Sleep(static_cast<DWORD>(std::atoi(hold)) * 1000);
                 micStop = true;
                 micThread.join();
                 timeEndPeriod(1);
                 shut();
-                return 0;
+                return fails ? 1 : 0;
             }
 
             // Bedienung simulieren: Musik-Regler auf ~50 % ziehen, Hauptschalter und "immer senden" umlegen, App-Zeile waehlen.

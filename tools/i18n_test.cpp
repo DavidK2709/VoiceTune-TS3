@@ -51,7 +51,7 @@ int main()
     CHECK(i18n::Tr(std::wstring(L"Umbenennen")) == L"Rename", "Tr(wstring)");
     CHECK(i18n::Tr8("Steuerung öffnen") == "Open controls", "Tr8 English");
     CHECK(i18n::Tr8("♪  MUSIK AN") == "♪  MUSIC ON", "Tr8 mit Sonderzeichen: '%s'", i18n::Tr8("♪  MUSIK AN").c_str());
-    CHECK(i18n::Tr8("VoiceTune: Sound 3 abspielen") == "VoiceTune: Play sound 3", "Hotkey-Beschreibung");
+    CHECK(i18n::Tr8("VoiceTune: Sound %d abspielen") == "VoiceTune: Play sound %d", "Hotkey-Beschreibung");
 
     // Rueckfall: unbekannte Texte bleiben, auch dynamische Namen (Profilnamen, App-Namen)
     const wchar_t* unknown = L"Mein ganz eigenes Profil";

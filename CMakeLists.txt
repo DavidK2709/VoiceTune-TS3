@@ -37,6 +37,10 @@ add_library(VoiceTune SHARED
     src/settings.cpp
     src/config_dialog.cpp
     src/soundboard.cpp
+    src/soundboard_view.cpp
+    src/soundboard_window.cpp
+    src/voicechanger.cpp
+    src/voicechanger_page.cpp
     src/commands.cpp
     src/remote.cpp
     src/voicetune.rc

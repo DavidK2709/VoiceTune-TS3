@@ -93,7 +93,7 @@ int main()
     CHECK(RunCommandPath("source/Spotify.EXE") && en.GetSettings().targetExe == L"spotify.exe" && !RunCommandPath("source/"), "source");
 
     // Soundboard (leere Slots: gueltiges Argument, aber nichts zu spielen)
-    CHECK(RunCommandPath("sound/1") && RunCommandPath("sound/8") && !RunCommandPath("sound/0") && !RunCommandPath("sound/9") && !RunCommandPath("sound/x") && !RunCommandPath("sound"), "sound-Argumente");
+    CHECK(RunCommandPath("sound/1") && RunCommandPath("sound/400") && !RunCommandPath("sound/0") && !RunCommandPath("sound/401") && !RunCommandPath("sound/x") && !RunCommandPath("sound"), "sound-Argumente");
     CHECK(RunCommand("soundstop"), "soundstop");
 
     // Datei-Player ohne Titel: darf nichts kaputt machen
@@ -104,12 +104,12 @@ int main()
 
     // Hotkeys: jedes Schluesselwort der Liste wird verstanden (profile_next hat Profile, sound-Slots sind leer = ok)
     const auto& list = HotkeyList();
-    CHECK(list.size() == 18, "18 Hotkeys, nicht %zu", list.size());
+    CHECK(list.size() == 9 + static_cast<size_t>(kSoundHotkeys) + 1, "%d Hotkeys erwartet, nicht %zu", 9 + kSoundHotkeys + 1, list.size());
     for (const auto& h : list) {
         CHECK(h.keyword && h.description && std::string(h.description).size() > 5 && std::string(h.description).size() < 127, "Beschreibung von %s", h.keyword);
         CHECK(RunHotkey(h.keyword), "Hotkey '%s' wird nicht verstanden", h.keyword);
     }
-    CHECK(!RunHotkey("sound9") && !RunHotkey("sound") && !RunHotkey("sounds") && !RunHotkey("nix"), "ungueltige Hotkeys");
+    CHECK(RunHotkey("sound9") && RunHotkey("sound400") && !RunHotkey("sound0") && !RunHotkey("sound401") && !RunHotkey("sound") && !RunHotkey("sounds") && !RunHotkey("nix"), "ungueltige Hotkeys");
 
     en.Shutdown();
     DeleteFileW((cfg + L"\\voicetune.ini").c_str());

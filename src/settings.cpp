@@ -128,14 +128,37 @@ Settings LoadSettings(const std::wstring& iniPath, const wchar_t* section)
 
     // Soundboard
     s.soundVolPct = Clamp200(GetPrivateProfileIntW(section, L"SoundVolume", s.soundVolPct, p));
-    for (int i = 0; i < kSoundSlots; ++i) {
-        wchar_t key[32], buf[520] = {};
-        swprintf(key, 32, L"SoundPath%d", i + 1);
-        GetPrivateProfileStringW(L"Sounds", key, L"", buf, 520, p);
-        s.sounds[i].path = buf;
-        swprintf(key, 32, L"SoundName%d", i + 1);
-        GetPrivateProfileStringW(L"Sounds", key, L"", buf, 520, p);
-        s.sounds[i].name = buf;
+    s.soundCols     = std::min(kSoundMaxCols, std::max(1, static_cast<int>(GetPrivateProfileIntW(section, L"SoundCols", s.soundCols, p))));
+    s.soundRows     = std::min(kSoundMaxRows, std::max(1, static_cast<int>(GetPrivateProfileIntW(section, L"SoundRows", s.soundRows, p))));
+    s.soundShowKeys = GetPrivateProfileIntW(section, L"SoundShowKeys", s.soundShowKeys, p) != 0;
+    s.soundPinned   = GetPrivateProfileIntW(section, L"SoundPinned", s.soundPinned, p) != 0;
+    {
+        // Ein Schluessel je Knopf: Slot<n>=RRGGBB|Lautstaerke|Pfad|Name (Pfade enthalten kein '|', der Name steht zuletzt). SoundCount = hoechster belegter
+        // Knopf, damit nicht alle 400 Schluessel abgefragt werden. Aeltere Versionen: SoundPath<n>/SoundName<n> (n <= 8).
+        const int count = std::min(kSoundSlots, std::max(0, static_cast<int>(GetPrivateProfileIntW(L"Sounds", L"SoundCount", 0, p))));
+        wchar_t   key[32];
+        std::vector<wchar_t> buf(2048);
+        for (int i = 0; i < count; ++i) {
+            swprintf(key, 32, L"Slot%d", i + 1);
+            GetPrivateProfileStringW(L"Sounds", key, L"", buf.data(), static_cast<DWORD>(buf.size()), p);
+            const std::wstring v = buf.data();
+            const size_t       a = v.find(L'|'), b = a == std::wstring::npos ? a : v.find(L'|', a + 1), c = b == std::wstring::npos ? b : v.find(L'|', b + 1);
+            if (c == std::wstring::npos) continue;
+            SoundSlot& d = s.sounds[i];
+            d.color      = static_cast<uint32_t>(wcstoul(v.substr(0, a).c_str(), nullptr, 16)) & 0xFFFFFF;
+            d.volPct     = Clamp200(static_cast<int>(wcstol(v.substr(a + 1, b - a - 1).c_str(), nullptr, 10)));
+            d.path       = v.substr(b + 1, c - b - 1);
+            d.name       = v.substr(c + 1);
+        }
+        for (int i = 0; i < 8 && i < kSoundSlots; ++i) {
+            if (!s.sounds[i].path.empty()) continue;
+            swprintf(key, 32, L"SoundPath%d", i + 1);
+            GetPrivateProfileStringW(L"Sounds", key, L"", buf.data(), static_cast<DWORD>(buf.size()), p);
+            s.sounds[i].path = buf.data();
+            swprintf(key, 32, L"SoundName%d", i + 1);
+            GetPrivateProfileStringW(L"Sounds", key, L"", buf.data(), static_cast<DWORD>(buf.size()), p);
+            s.sounds[i].name = buf.data();
+        }
     }
 
     s.nowPlayingChat    = GetPrivateProfileIntW(section, L"NowPlayingChat", s.nowPlayingChat, p) != 0;
@@ -209,14 +232,23 @@ void SaveSettings(const std::wstring& iniPath, const Settings& s)
     }
 
     WritePrivateProfileStringW(kSection, L"SoundVolume", std::to_wstring(s.soundVolPct).c_str(), p);
-    WritePrivateProfileStringW(L"Sounds", nullptr, nullptr, p);
-    for (int i = 0; i < kSoundSlots; ++i) {
-        if (s.sounds[i].path.empty()) continue;
-        wchar_t key[32];
-        swprintf(key, 32, L"SoundPath%d", i + 1);
-        WritePrivateProfileStringW(L"Sounds", key, s.sounds[i].path.c_str(), p);
-        swprintf(key, 32, L"SoundName%d", i + 1);
-        WritePrivateProfileStringW(L"Sounds", key, s.sounds[i].name.c_str(), p);
+    WritePrivateProfileStringW(kSection, L"SoundRows", std::to_wstring(s.soundRows).c_str(), p);
+    WritePrivateProfileStringW(kSection, L"SoundCols", std::to_wstring(s.soundCols).c_str(), p);
+    WritePrivateProfileStringW(kSection, L"SoundShowKeys", s.soundShowKeys ? L"1" : L"0", p);
+    WritePrivateProfileStringW(kSection, L"SoundPinned", s.soundPinned ? L"1" : L"0", p);
+    {
+        WritePrivateProfileStringW(L"Sounds", nullptr, nullptr, p);
+        int last = 0;
+        for (int i = 0; i < kSoundSlots; ++i) {
+            const SoundSlot& b = s.sounds[i];
+            if (b.path.empty()) continue;
+            last = i + 1;
+            wchar_t key[32], head[32];
+            swprintf(key, 32, L"Slot%d", i + 1);
+            swprintf(head, 32, L"%06X|%d|", static_cast<unsigned>(b.color & 0xFFFFFF), b.volPct);
+            WritePrivateProfileStringW(L"Sounds", key, (std::wstring(head) + b.path + L"|" + b.name).c_str(), p);
+        }
+        if (last) WritePrivateProfileStringW(L"Sounds", L"SoundCount", std::to_wstring(last).c_str(), p);
     }
 
     WritePrivateProfileStringW(kSection, L"NowPlayingChat", s.nowPlayingChat ? L"1" : L"0", p);

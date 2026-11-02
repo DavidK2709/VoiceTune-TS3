@@ -72,11 +72,16 @@ std::string ProfilesJson() {
 
 std::string SoundsJson() {
     const auto  sounds = Engine::Get().GetSounds();
-    std::string o      = "{\"sounds\":[";
+    const auto  st     = Engine::Get().GetSettings();
+    size_t      count  = 8; // wie bisher mindestens die ersten 8 Knoepfe, danach bis zum letzten belegten
     for (size_t i = 0; i < sounds.size(); ++i)
-        o += std::string(i ? "," : "") + "{\"slot\":" + std::to_string(i + 1) + ",\"name\":\"" + JsonEsc(WideToUtf8(sounds[i].name)) + "\",\"ready\":" +
-             (sounds[i].state == Soundboard::State::Ready ? "true" : "false") + "}";
-    return o + "]}";
+        if (!sounds[i].path.empty()) count = std::max(count, i + 1);
+    std::string o = "{\"sounds\":[";
+    for (size_t i = 0; i < count; ++i) {
+        const bool ready = sounds[i].state == Soundboard::State::Ready || sounds[i].state == Soundboard::State::Unloaded || sounds[i].state == Soundboard::State::Loading;
+        o += std::string(i ? "," : "") + "{\"slot\":" + std::to_string(i + 1) + ",\"name\":\"" + JsonEsc(WideToUtf8(sounds[i].name)) + "\",\"ready\":" + (ready ? "true" : "false") + "}";
+    }
+    return o + "],\"rows\":" + std::to_string(st.soundRows) + ",\"cols\":" + std::to_string(st.soundCols) + "}";
 }
 
 std::string Handle(const std::string& req) {

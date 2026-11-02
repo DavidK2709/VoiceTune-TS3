@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <deque>
 
 #include "app_discovery.h"
 #include "engine.h"
@@ -131,7 +132,8 @@ bool RunHotkey(const std::string& keyword)
 
 const std::vector<HotkeyDef>& HotkeyList()
 {
-    static const std::vector<HotkeyDef> list = {
+    static const std::vector<HotkeyDef> list = [] {
+      std::vector<HotkeyDef> v = {
         {"toggle", "VoiceTune: Musik einspielen an/aus"},
         {"micmute", "VoiceTune: Mikrofon stumm/laut"},
         {"musicvol_up", "VoiceTune: Musik lauter"},
@@ -141,15 +143,14 @@ const std::vector<HotkeyDef>& HotkeyList()
         {"prev", "VoiceTune: Datei-Player vorheriger Titel"},
         {"monitor", "VoiceTune: Mith\xC3\xB6ren an/aus"},
         {"profile_next", "VoiceTune: n\xC3\xA4" "chstes Profil"},
-        {"sound1", "VoiceTune: Sound 1 abspielen"},
-        {"sound2", "VoiceTune: Sound 2 abspielen"},
-        {"sound3", "VoiceTune: Sound 3 abspielen"},
-        {"sound4", "VoiceTune: Sound 4 abspielen"},
-        {"sound5", "VoiceTune: Sound 5 abspielen"},
-        {"sound6", "VoiceTune: Sound 6 abspielen"},
-        {"sound7", "VoiceTune: Sound 7 abspielen"},
-        {"sound8", "VoiceTune: Sound 8 abspielen"},
         {"soundstop", "VoiceTune: Alle Sounds stoppen"},
-    };
+      };
+      static std::deque<std::string> text; // stabile Zeiger fuer die Sound-Knoepfe 1..kSoundHotkeys
+      for (int i = 1; i <= kSoundHotkeys; ++i) {
+          text.push_back("sound" + std::to_string(i));
+          v.push_back({text.back().c_str(), "VoiceTune: Sound %d abspielen", i});
+      }
+      return v;
+    }();
     return list;
 }

@@ -259,7 +259,7 @@ int main(int argc, char** argv)
         en.SoundSetSlot(0, wav);
         for (int i = 0; i < 400 && en.GetSounds()[0].state != Soundboard::State::Ready; ++i) Sleep(20);
         const auto sounds = en.GetSounds();
-        CHECK(sounds.size() == 8 && sounds[0].state == Soundboard::State::Ready && sounds[0].name == L"tone" && sounds[0].seconds > 5.5, "Slot geladen (%zu, Name '%ls')", sounds.size(), sounds[0].name.c_str());
+        CHECK(sounds.size() == static_cast<size_t>(kSoundSlots) && sounds[0].state == Soundboard::State::Ready && sounds[0].name == L"tone" && sounds[0].seconds > 5.5, "Slot geladen (%zu, Name '%ls')", sounds.size(), sounds[0].name.c_str());
         en.SoundPlay(0);
         CHECK(en.GetSettings().enabled, "Sound schaltet \"Musik einspielen\" ein");
         const size_t k0 = RunFor(1800);
@@ -290,10 +290,34 @@ int main(int argc, char** argv)
 
         en.SoundRename(0, L"  Hupe \"laut\"  ");
         CHECK(en.GetSounds()[0].name == L"Hupe 'laut'", "Umbenennen bereinigt");
+
+        // Editor: Name, Farbe und Lautstaerke je Knopf; Tauschen; Raster
+        en.SoundConfigure(0, wav, L"Laut", 0x123456, 50);
+        auto s0 = en.GetSound(0);
+        CHECK(s0.name == L"Laut" && s0.color == 0x123456 && s0.volPct == 50 && s0.path == wav, "SoundConfigure");
+        en.SoundConfigure(5, wav, L"", 0, 100);
+        CHECK(en.GetSound(5).name == L"tone", "leerer Name = Dateiname");
+        en.SoundSwap(0, 5);
+        CHECK(en.GetSound(0).name == L"tone" && en.GetSound(5).name == L"Laut" && en.GetSound(5).color == 0x123456 && en.GetSound(5).volPct == 50, "SoundSwap");
+        en.SoundSwap(5, 400); // ungueltig: nichts
+        CHECK(en.GetSound(5).name == L"Laut", "SoundSwap ungueltig");
+        en.SetSoundGrid(18, 17);
+        CHECK(en.GetSettings().soundRows == 18 && en.GetSettings().soundCols == 17, "Raster 18 x 17");
+        en.SetSoundGrid(99, 99);
+        CHECK(en.GetSettings().soundRows * en.GetSettings().soundCols <= kSoundSlots && en.GetSettings().soundRows <= kSoundMaxRows && en.GetSettings().soundCols <= kSoundMaxCols,
+              "Raster begrenzt: %d x %d", en.GetSettings().soundRows, en.GetSettings().soundCols);
+        en.SetSoundGrid(2, 4);
+        en.SetSoundShowKeys(false);
+        en.SetSoundPinned(true);
+        CHECK(!en.GetSettings().soundShowKeys && en.GetSettings().soundPinned, "Tastenkuerzel-Anzeige und Fenster oben");
+        en.SetSoundShowKeys(true);
+        en.SetSoundPinned(false);
+        en.SoundSetSlot(5, L"");
+        CHECK(en.GetSound(5).color == 0 && en.GetSound(5).volPct == 100, "Leeren setzt Farbe/Lautstaerke zurueck");
         en.SoundSetSlot(0, L"");
         CHECK(en.GetSounds()[0].state == Soundboard::State::Empty && en.GetSounds()[0].path.empty(), "Slot geleert");
         en.SoundPlay(0); // leerer Slot: nichts
-        en.SoundPlay(17);
+        en.SoundPlay(kSoundSlots);
         const size_t k4 = RunFor(400);
         CHECK(Peak(k4, 0.1, 0.2) == 0, "leerer/ungueltiger Slot bleibt still");
         en.SetEnabled(true);

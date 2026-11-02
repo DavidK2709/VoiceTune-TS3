@@ -1,15 +1,22 @@
 #pragma once
+#include <cstdint>
 #include <string>
 #include <vector>
 
 #include "presets.h"
 #include "profiles.h"
 
-// Soundboard: kurze Clips (Jingles), per Hotkey/Fenster/Stream Deck ueber der Musik abspielbar
-constexpr int kSoundSlots = 8;
+// Soundboard: kurze Clips (Jingles), per Hotkey/Fenster/Stream Deck ueber der Musik abspielbar. Die Knoepfe liegen zeilenweise in einem Raster
+// (Slot = Zeile * Spalten + Spalte); die ersten kSoundHotkeys Knoepfe koennen ein TS3-Tastenkuerzel bekommen.
+constexpr int kSoundSlots       = 400; // = Soundboard::kSlots
+constexpr int kSoundHotkeys     = 64;
+constexpr int kSoundMaxRows     = 20;
+constexpr int kSoundMaxCols     = 20;
 struct SoundSlot {
-    std::wstring path; // leer = Slot frei
-    std::wstring name; // Anzeigename (Standard: Dateiname ohne Endung)
+    std::wstring path;          // leer = Slot frei
+    std::wstring name;          // Anzeigename (Standard: Dateiname ohne Endung)
+    uint32_t     color = 0;     // 0xRRGGBB, 0 = Standardfarbe
+    int          volPct = 100;  // Lautstaerke dieses Knopfes, 0..200
 };
 
 struct Settings {
@@ -50,8 +57,12 @@ struct Settings {
     std::wstring          profileName;
 
     // Soundboard
-    SoundSlot sounds[kSoundSlots];
-    int       soundVolPct = 100; // 0..200
+    std::vector<SoundSlot> sounds = std::vector<SoundSlot>(kSoundSlots);
+    int       soundVolPct   = 100; // Gesamtlautstaerke, 0..200
+    int       soundRows     = 2;   // Raster 1..kSoundMaxRows x 1..kSoundMaxCols (Zeilen * Spalten <= kSoundSlots)
+    int       soundCols     = 4;
+    bool      soundShowKeys = true; // Tastenkuerzel auf den Knoepfen anzeigen
+    bool      soundPinned   = false; // Soundboard-Fenster immer im Vordergrund
 
     // Now-Playing: Titelwechsel im eigenen Chat melden (Standard), optional im Kanal-Chat (erreicht andere!) oder in den Client-Metadaten
     bool nowPlayingChat    = true;
