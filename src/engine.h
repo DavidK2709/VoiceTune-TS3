@@ -164,6 +164,8 @@ public:
     void SetNowPlayingCallback(void (*fn)(const std::wstring& title)) { nowPlayingCb_ = fn; }
     // Oberflaechensprache: 0 = automatisch, 1 = Deutsch, 2 = English (wird gespeichert und sofort uebernommen)
     void SetLanguage(int setting);
+    // Bereich "Erweitert" der Einstellungsseite auf-/zuklappen (wird gespeichert)
+    void SetAdvancedOpen(bool open);
 
     void SetNowPlayingChat(bool on);
     void SetNowPlayingChannel(bool on);

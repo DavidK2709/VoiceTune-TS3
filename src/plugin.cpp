@@ -366,7 +366,9 @@ EXPORT int ts3plugin_init()
     Engine::Get().SetEncodeCallback(ChannelEncodeInfo);
     Engine::Get().SetDiagCallback(SelfStateReport);
     Engine::Get().Init(Utf8ToWide(configPath));
-    SetHotkeySetupHandler([] { ts3Functions.showHotkeySetup(); });
+    SetHotkeySetupHandler([] {
+        if (ts3Functions.showHotkeySetup) ts3Functions.showHotkeySetup();
+    });
     Engine::Get().SetNowPlayingCallback(OnNowPlaying);
     SetCommandNotifier(OnCommandFeedback);
     RemoteSetUnavailableCallback(OnRemoteUnavailable);

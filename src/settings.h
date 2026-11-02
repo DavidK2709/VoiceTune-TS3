@@ -60,6 +60,9 @@ struct Settings {
 
     // Oberflaechensprache: 0 = automatisch (nach Windows), 1 = Deutsch, 2 = English
     int language = 0;
+
+    // Seite "Einstellungen": Bereich "Erweitert" aufgeklappt (Musikmodus, Mikro-Gate, Opus) - Standard zu
+    bool advancedOpen = false;
 };
 
 // Schnappschuss der aktuellen Einstellungen als Profil (Name leer, wird beim Speichern gesetzt)

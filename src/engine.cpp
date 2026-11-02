@@ -580,6 +580,13 @@ void Engine::SetLanguage(int setting)
     SaveLocked();
 }
 
+void Engine::SetAdvancedOpen(bool open)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.advancedOpen = open;
+    dirty_                 = true;
+}
+
 void Engine::SetNowPlayingChat(bool on)
 {
     std::lock_guard<std::mutex> lk(mutex_);

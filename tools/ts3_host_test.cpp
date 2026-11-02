@@ -134,6 +134,7 @@ int main(int argc, char** argv)
     f.getChannelOfClient         = FakeChannelOf;
     f.getChannelVariableAsInt    = FakeChannelInt;
     f.getEncodeConfigValue       = FakeEncodeConfig;
+    f.showHotkeySetup            = [] { std::printf("  [ts3] showHotkeySetup()\n"); };
     f.getCurrentServerConnectionHandlerID = [] { return static_cast<uint64>(1); };
     setFn(f);
     int r = init();
@@ -359,9 +360,96 @@ int main(int argc, char** argv)
                 return 0;
             }
 
+            // Einstellungsseite durchklicken (AAM_SET=1): alle Reiter fotografieren (DE und EN, "Erweitert" zu und offen), jedes Element der Seite
+            // "Einstellungen" bedienen und die gespeicherten Werte in %TEMP%\voicetune.ini pruefen. Bilder set_*.bmp.
+            if (std::getenv("AAM_SET")) {
+                int fails = 0;
+                auto click = [&](int x, int y) {
+                    SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(x, y));
+                    SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, y));
+                    SendMessageW(w, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+                };
+                char tmp[MAX_PATH];
+                GetEnvironmentVariableA("TEMP", tmp, MAX_PATH);
+                const std::string ini  = std::string(tmp) + "\\voicetune.ini";
+                auto              val  = [&](const char* key, int def) { return static_cast<int>(GetPrivateProfileIntA("VoiceTune", key, def, ini.c_str())); };
+                auto              check = [&](bool ok, const char* what) {
+                    std::printf("  %s  %s\n", ok ? "ok  " : "FEHL", what);
+                    if (!ok) ++fails;
+                };
+                const int tabX[4] = {111, 310, 509, 708};
+                const int gearX = 672, gearY = 36; // Zahnrad neben dem Status-Schild
+                const std::string base = argv[3];
+                auto shotPages = [&](const char* prefix) {
+                    for (int i = 0; i < 4; ++i) {
+                        click(tabX[i], 85);
+                        Sleep(700);
+                        shoot(base + prefix + std::to_string(i) + ".bmp");
+                    }
+                };
+
+                shotPages("set_de");                       // alle 4 Seiten, Deutsch
+                click(gearX, gearY);                       // Zahnrad: Einstellungs-Popup auf
+                Sleep(500);
+                shoot(base + "set_de4.bmp");               // Popup, "Erweitert" zu
+                click(410, 490);                           // "Erweitert" aufklappen
+                Sleep(500);
+                shoot(base + "set_deadv.bmp");
+
+                // Jedes Element bedienen
+                click(210, 192);                           // Sprache: Deutsch
+                click(90, 192);                            // Sprache: Automatisch
+                click(330, 192);                           // Sprache: English
+                click(210, 275);                           // Hotkeys festlegen ...
+                click(360, 375);                           // Titel melden: eigener Chat aus
+                click(360, 403);                           // Kanal-Chat an
+                click(360, 431);                           // Client-Metadaten an
+                click(760, 161);                           // Musik immer senden aus
+                click(760, 211);                           // Mono an
+                click(490, 286);                           // Qualitaet: niedrige Latenz
+                click(360, 535);                           // Musikmodus aus
+                click(200, 585);                           // Mikro-Gate irgendwo in der Mitte
+                click(760, 535);                           // Opus optimieren aus
+                click(760, 585);                           // Opus-Vorschau aus
+                Sleep(1800);                               // Einstellungen werden im Sekundentakt gespeichert
+                check(val("Language", -1) == 2, "Sprache English gespeichert");
+                check(val("NowPlayingChat", -1) == 0 && val("NowPlayingChannel", -1) == 1 && val("NowPlayingMeta", -1) == 1, "Titel melden: Chat aus, Kanal an, Metadaten an");
+                check(val("AlwaysSend", -1) == 0, "Musik immer senden aus");
+                check(val("Mono", -1) == 1, "Mono an");
+                check(val("Quality", -1) == 0, "Qualitaet niedrige Latenz");
+                check(val("MusicMode", -1) == 0, "Musikmodus aus");
+                check(val("GateDb", 0) > -70 && val("GateDb", 0) < -25 && val("GateDb", 0) != -50, "Mikro-Gate verstellt");
+                check(val("OptimizeForOpus", -1) == 0, "Opus optimieren aus");
+                check(val("OpusPreview", -1) == 0, "Opus-Vorschau aus");
+                check(val("AdvancedOpen", -1) == 1, "Erweitert aufgeklappt gespeichert");
+
+                shoot(base + "set_enadv.bmp");             // Englisch, aufgeklappt, alles umgestellt
+                click(410, 490);                           // Erweitert zuklappen
+                Sleep(1400);
+                check(val("AdvancedOpen", -1) == 0, "Erweitert zugeklappt gespeichert");
+                click(410, 85);                            // Klick neben das Panel schliesst das Popup
+                Sleep(300);
+                shoot(base + "set_enclosed.bmp");          // zu: Hauptseite wieder sichtbar und bedienbar
+                shotPages("set_en");                       // alle 4 Seiten, English
+                click(gearX, gearY);                       // Popup wieder auf
+                click(90, 192);                            // zurueck auf Automatisch (die Einstellungen landen nur in %TEMP%)
+                Sleep(500);
+                std::printf("UI-Pruefung: %d Fehler\n", fails);
+                micStop = true;
+                micThread.join();
+                timeEndPeriod(1);
+                shut();
+                return fails ? 1 : 0;
+            }
+
             // Zum Ausprobieren: Fenster N Sekunden offen und bedienbar lassen (AAM_LIVE=45), danach beenden
             if (const char* live = std::getenv("AAM_LIVE")) {
                 std::printf("Fenster offen fuer %s s\n", live);
+                if (std::getenv("AAM_OPENSET")) { // Zahnrad klicken: Einstellungs-Popup gleich offen
+                    SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(672, 36));
+                    SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(672, 36));
+                    SendMessageW(w, WM_LBUTTONUP, 0, MAKELPARAM(672, 36));
+                }
                 Sleep(static_cast<DWORD>(std::atoi(live)) * 1000);
                 micStop = true;
                 micThread.join();
@@ -403,100 +491,39 @@ int main(int argc, char** argv)
                 };
                 const std::string  base = argv[3];
                 const std::wstring d    = std::wstring(sdir, sdir + std::strlen(sdir));
-                // Seite 0: Profil speichern (Namenseingabe), Wert aendern -> "(geaendert)", Titel melden einschalten
-                click(502, 750);                         // "Speichern als ..."
+                // Seite 0: Profil speichern (Namenseingabe), Wert aendern -> "(geaendert)"
+                click(506, 601);                         // "Speichern als ..."
                 type(L"Abend");
                 Sleep(400);
                 shoot(base + "p1.bmp");                  // Eingabe offen
                 enter();
                 Sleep(400);
                 shoot(base + "p2.bmp");                  // gespeichert, Meldung in der Fusszeile
-                click(125, 595);                         // Musik-Lautstaerke aendern
-                click(160, 760 - 0);                     // (kein Ziel; Fokus)
-                Sleep(400);
-                click(764, 718);                         // zweite Zeile "Titel melden": Kanal-Chat (Warnfarbe)
+                click(125, 523);                         // Musik-Lautstaerke aendern
                 Sleep(500);
-                shoot(base + "p3.bmp");
-                click(764, 718);                         // wieder aus
+                shoot(base + "p3.bmp");                  // Profil "(geaendert)"
                 // Seite Sounds
-                click(615, 106);
+                click(708, 85);
                 drop({d + L"\\tone.wav", d + L"\\tone.mp3"}, 0, 0);
                 Sleep(1800);
                 shoot(base + "s1.bmp");                  // zwei Kacheln belegt
-                click(122, 291);                         // Kachel 1 spielen
+                click(125, 257);                         // Kachel 1 spielen
                 Sleep(150);
                 shoot(base + "s2.bmp");                  // Aufleuchten
-                rclick(314, 291);                        // Menue an Kachel 2
-                SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(330, 313));
+                rclick(315, 257);                        // Menue an Kachel 2
+                SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(331, 279));
                 shoot(base + "s3.bmp");
-                click(330, 313);                         // "Umbenennen"
+                click(331, 279);                         // "Umbenennen"
                 type(L"Hupe laut");
                 Sleep(300);
                 shoot(base + "s4.bmp");                  // Namenseingabe
                 enter();
                 Sleep(400);
                 shoot(base + "s5.bmp");
-                click(101, 106);                         // zurueck auf Seite 0
+                click(111, 85);                          // zurueck auf Seite 0
                 Sleep(400);
                 shoot(base + "p4.bmp");
                 if (const char* hold = std::getenv("AAM_HOLD")) Sleep(static_cast<DWORD>(std::atoi(hold)) * 1000);
-                micStop = true;
-                micThread.join();
-                timeEndPeriod(1);
-                shut();
-                return 0;
-            }
-
-            // Auf English umschalten und alle vier Seiten fotografieren (AAM_EN=1); en0..en3.bmp
-            if (std::getenv("AAM_EN")) {
-                auto click = [&](int x, int y) {
-                    SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(x, y));
-                    SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, y));
-                    SendMessageW(w, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
-                };
-                click(674, 48); // EN
-                Sleep(2600);    // Statusanzeigen der Engine aktualisieren sich im Sekundentakt
-                shoot(std::string(argv[3]) + "en0.bmp");
-                click(279, 106);
-                Sleep(2600);
-                shoot(std::string(argv[3]) + "en1.bmp");
-                click(477, 106);
-                Sleep(500);
-                shoot(std::string(argv[3]) + "en2.bmp");
-                click(615, 106);
-                Sleep(500);
-                shoot(std::string(argv[3]) + "en3.bmp");
-                if (const char* hold = std::getenv("AAM_HOLD")) Sleep(static_cast<DWORD>(std::atoi(hold)) * 1000);
-                click(46, 48);  // zurueck auf Deutsch (die Einstellung landet nur in %TEMP%)
-                micStop = true;
-                micThread.join();
-                timeEndPeriod(1);
-                shut();
-                return 0;
-            }
-
-            // Nur "neue Elemente": Stumm-Knopf der Mikrofon-Lautstaerke, Opus-Zeile der Qualitaets-Karte (Kopfzeile mit App-Icon ist schon auf dem ersten Bild)
-            if (std::getenv("AAM_NEW")) {
-                auto click = [&](int x, int y) {
-                    SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(x, y));
-                    SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, y));
-                    SendMessageW(w, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
-                };
-                SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(275, 617));
-                Sleep(300);
-                shoot(std::string(argv[3]) + "n1.bmp"); // Stumm-Knopf mit Maus darueber
-                click(275, 617);                         // stumm
-                Sleep(600);
-                shoot(std::string(argv[3]) + "n2.bmp");
-                click(275, 617);                         // wieder an
-                click(250, 106);                         // Reiter "Equalizer & Qualitaet"
-                Sleep(2600);                             // Opus vorschau wird vom Watcher eingerichtet
-                shoot(std::string(argv[3]) + "n3.bmp");
-                click(56, 722);                          // "Klang fuer Opus optimieren" aus
-                click(440, 722);                         // "Vorschau wie Opus" aus
-                Sleep(1500);
-                shoot(std::string(argv[3]) + "n4.bmp");
-                if (const char* hold = std::getenv("AAM_HOLD")) Sleep(static_cast<DWORD>(std::atoi(hold)) * 1000); // Fenster fuer den Nutzer eine Weile offen lassen
                 micStop = true;
                 micThread.join();
                 timeEndPeriod(1);

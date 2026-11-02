@@ -13,6 +13,7 @@ namespace {
 SOCKET            g_listen = INVALID_SOCKET;
 std::thread       g_thread;
 std::atomic<bool> g_quit{false};
+unsigned short    g_port = 19470;
 
 std::string WideToUtf8(const std::wstring& w) {
     int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
@@ -132,6 +133,7 @@ void NotifyUnavailable(unsigned short port) {
 void RemoteSetUnavailableCallback(void (*fn)(unsigned short port)) { g_onUnavailable = fn; }
 
 void RemoteStart(unsigned short port) {
+    g_port = port;
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) { NotifyUnavailable(port); return; }
     g_listen = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -146,6 +148,9 @@ void RemoteStart(unsigned short port) {
     g_quit = false;
     g_thread = std::thread(Serve);
 }
+
+bool RemoteIsRunning() { return g_listen != INVALID_SOCKET && g_thread.joinable() && !g_quit; }
+unsigned short RemotePort() { return g_port; }
 
 void RemoteStop() {
     g_quit = true;

@@ -142,6 +142,7 @@ Settings LoadSettings(const std::wstring& iniPath, const wchar_t* section)
     s.nowPlayingChannel = GetPrivateProfileIntW(section, L"NowPlayingChannel", s.nowPlayingChannel, p) != 0;
     s.nowPlayingMeta    = GetPrivateProfileIntW(section, L"NowPlayingMeta", s.nowPlayingMeta, p) != 0;
     s.language          = std::min(2, std::max(0, static_cast<int>(GetPrivateProfileIntW(section, L"Language", s.language, p))));
+    s.advancedOpen      = GetPrivateProfileIntW(section, L"AdvancedOpen", s.advancedOpen, p) != 0;
     return s;
 }
 
@@ -222,4 +223,5 @@ void SaveSettings(const std::wstring& iniPath, const Settings& s)
     WritePrivateProfileStringW(kSection, L"NowPlayingChannel", s.nowPlayingChannel ? L"1" : L"0", p);
     WritePrivateProfileStringW(kSection, L"NowPlayingMeta", s.nowPlayingMeta ? L"1" : L"0", p);
     WritePrivateProfileStringW(kSection, L"Language", std::to_wstring(s.language).c_str(), p);
+    WritePrivateProfileStringW(kSection, L"AdvancedOpen", s.advancedOpen ? L"1" : L"0", p);
 }

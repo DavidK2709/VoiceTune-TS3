@@ -30,15 +30,16 @@ oder `scripts\package.ps1` ausführen und `build\VoiceTune.ts3_plugin` doppelkli
 In TeamSpeak: *Einstellungen → Plugins → VoiceTune* aktivieren, falls es nicht von selbst geschieht (das Plugin hat einen neuen Namen). Im Menü *Plugins* steht es danach mit eigenem kleinen Icon.
 
 ## Benutzen
-*Plugins → VoiceTune → Einstellungen…* öffnet das Fenster mit vier Seiten. Oben rechts wechselst du die Sprache (**DE | EN**), daneben öffnet **„Hotkeys …“** die Hotkey-Einstellungen von TeamSpeak.
-Die Oberfläche gibt es auf Deutsch und Englisch; „automatisch“ richtet sich nach der Windows-Sprache (nicht Deutsch → English). Die Plugin-Menüeinträge im Plugins-Menü und die Hotkey-Beschreibungen folgen der Sprache beim nächsten Start von TeamSpeak.
+*Plugins → VoiceTune → Einstellungen…* öffnet das Fenster mit **vier Seiten**: **Quelle & Mix** und **Equalizer** für das, was du beim Musikhören laufend anfasst, sowie **Dateien** und **Sounds** für Dateien und Jingles.
+Alles, was man einmal einstellt (Sprache, Senden, Titel melden, Hotkeys, Erweitert), liegt hinter dem **Zahnrad** oben rechts neben dem Status-Schild (AKTIV/WARTET/AUS): Es öffnet ein Popup über der Oberfläche.
 
 ### Seite „Quelle & Mix“
 - **Audio-Quelle**: Kachel-Raster aller Apps mit Audio (Icon, Fenstertitel/Songname). Die Liste ist **live** (jede Sekunde): neue Apps erscheinen von selbst, beendete verschwinden,
   Songtitel aktualisieren sich, die übrigen Kacheln rücken weich nach. Spielt eine App gerade Ton, zeigt die Kachel eine kleine animierte Audio-Spur (rein optisch, nicht der echte Pegel).
-  Mausrad scrollt. **Rechtsklick auf eine App** blendet sie aus, **Rechtsklick ins Leere** → „Alle Apps einblenden“. Die aktive Quelle lässt sich nicht ausblenden.
-- **Musik einspielen**: Hauptschalter (auch im Plugin-Menü: *Musik einspielen: Ein/Aus*). Bei jedem Umschalten erscheint im Chat ein Banner mit Linie oben und unten:
+  Mausrad scrollt. **Rechtsklick auf eine App** blendet sie aus, **Rechtsklick ins Leere** → „Alle Apps einblenden“ (sind Apps ausgeblendet, steht das rechts in der Fußzeile). Die aktive Quelle lässt sich nicht ausblenden.
+- **Musik einspielen**: Hauptschalter, klein rechts in der Titelleiste der Karte „Audio-Quelle“ (auch im Plugin-Menü: *Musik einspielen: Ein/Aus*). Daneben steht der Status; das Schild oben rechts zeigt ihn als AKTIV/WARTET/AUS. Bei jedem Umschalten erscheint im Chat ein Banner mit Linie oben und unten:
   **grün** „♪ MUSIK AN · Quelle“ bzw. **dunkelrot** „■ MUSIK AUS · Quelle“. Läuft gerade eine Datei, steht ihr Titel statt der App im Banner.
+  Sendet TeamSpeak die Musik trotz Musikmodus nicht, steht unter dem Schalter in **Orange**: „TS3 sendet die Musik nicht – Hilfe: Einstellungen → Erweitert“. Sonst zeigt die Zeile den normalen Status.
 - **Pegel**: zeigt live, was ins Mikrofon gemischt wird.
 - **Mithören**: spielt die eingespielte Musik zusätzlich in *deine* TeamSpeak-Ausgabe (Kopfhörer), damit du prüfen kannst, dass alles ankommt.
   Der Regler **Verzögerung** (0–2000 ms) stellt ein, wie spät du sie hörst, z.B. passend zur Verzögerung, mit der die anderen dich hören
@@ -48,13 +49,10 @@ Die Oberfläche gibt es auf Deutsch und Englisch; „automatisch“ richtet sich
 - **Musik-/Mikrofon-Lautstärke**: 0–200 %, rastet bei 100 % ein.
 - **Mikrofon stumm** (Mikrofon-Symbol links neben dem Wert der Mikrofon-Lautstärke): deine Stimme wird nicht gesendet, die Musik läuft weiter. Wirkt auch, wenn gerade keine Musik läuft.
   Der Zustand wird **absichtlich nicht gespeichert** – nach einem Neustart ist das Mikrofon wieder an, damit du es nicht versehentlich stumm lässt.
-- **Musik immer senden**: überträgt die Musik auch ohne Push-to-Talk/Sprachaktivierung.
 - **Profile** (rechts unten): ein Profil ist ein benannter Schnappschuss von Quelle, Lautstärken, Mithören, Equalizer, Qualität und Opus-Schaltern (nicht: Stumm, „Musik einspielen“, Musikmodus). **◀ ▶** blättert durch die Profile und wendet sie sofort an,
   **Speichern als …** legt eines an (oder aktualisiert das gewählte), **Umbenennen** und **Löschen** (zweiter Klick zur Sicherheit) gelten für das gewählte. Hast du nach dem Anwenden etwas verändert, steht „(geändert)“ daneben. Bis zu 30 Profile; per Hotkey „nächstes Profil“ oder Stream Deck wechselst du reihum.
-- **Titel melden** (links unten): bei einem Titelwechsel (Dateititel oder Titel im Fenster der App, z.B. „Artist - Song“ bei Spotify) erscheint eine Zeile *♪ Spielt: …* – standardmäßig im **eigenen Chat**. Optional **im Kanal-Chat**
-  (alle im Kanal sehen es, deshalb standardmäßig aus) oder **in den Client-Metadaten** (dein TeamSpeak-Metadatenfeld, beim Ausschalten wird der alte Wert wiederhergestellt). Gemeldet wird erst, wenn der Titel 3 s stabil ist, nie doppelt, und nur bei eingeschalteter Musik.
 
-### Seite „Equalizer & Qualität“
+### Seite „Equalizer“
 - **Equalizer** mit **10, 31 oder 61 Bändern** (61 = Sechstel-Oktav-Raster, 20 Hz–20 kHz), je ±12 dB. Mit der Maus Bänder ziehen oder eine Kurve über mehrere
   Bänder zeichnen; Rechts-/Doppelklick setzt ein Band auf 0 dB zurück. Beim Wechsel des Rasters wird die Kurve umgerechnet.
 - **Filter-Auswahl** (Dropdown über dem Plot): *Standard* (Flach, Bass+, Höhen+, Sprache, Loudness, V-Form) und deine **eigenen Filter**.
@@ -66,27 +64,8 @@ Die Oberfläche gibt es auf Deutsch und Englisch; „automatisch“ richtet sich
 - Hinter den Reglern läuft das **Live-Spektrum** der Musik (nach EQ und Lautstärke), darunter die **Tonspur** (Wellenform der letzten ~10 s in Echtzeit).
 - **Einstellungen anhören**: Knopf gedrückt halten, oder daneben den Schalter **Dauerhaft** an – du hörst die Musik mit EQ und Qualität (ohne Verzögerung) in deiner TeamSpeak-Ausgabe.
   Dabei gilt, was wirklich gesendet wird: bei einem Mono-Mikrofon also die Mono-Summe. Der Schalter geht beim Schließen des Fensters wieder aus.
-- **Musikmodus** (Standard: an, bitte eingeschaltet lassen): TeamSpeak ruft das Plugin *nach* seiner Vorverarbeitung auf. Die Sprachaktivierung startet daher nie von selbst eine Übertragung, nur weil
-  das Plugin Musik einmischt: Die Musik käme erst durch, wenn du einmal sprichst. Solange Musik läuft, schaltet das Plugin deshalb – wie ein Soundboard-Plugin – auf **Dauersenden**:
-  Sprachaktivierung aus, Mikrofon-Eingang aktiv (auch bei Push-to-Talk), Änderungen sofort an TS3 übergeben; das alles im Mikrofon-Callback. Dazu schaltet es
-  Rauschfilter und Auto-Pegel ab, weil sie Musik verschlechtern. 2,5 s nach dem Ende der Musik stellt es exakt deine bisherigen Werte wieder her (auch beim Beenden). Das Plugin-eigene **Mikro-Gate**
-  (Schwelle −70…−25 dB, −70 = aus) hält währenddessen Tastatur- und Raumgeräusche vom Mikrofon fern. Voraussetzung ist „Musik immer senden“.
-  Jeder „Test starten“ in den Aufnahme-Einstellungen läuft auf einer **eigenen, neuen Verbindung** (im TS3-Log `schid 2`, `3`, …; dein Server ist meist `schid 1`) mit eigener Vorverarbeitung:
-  der Musikmodus folgt dem automatisch, setzt die alte Verbindung zurück und schaltet die neue um.
-  Kontrolle: Unter dem Schalter steht, ob TS3 die Musik wirklich sendet („TS3 sendet nicht“ in Orange: dann steht im TS3-Log eine Zeile „Diagnose“ mit vad, Eingang, Stumm und Talk-Power der Verbindung).
-  Hinweis: Das Plugin kann nur umgehen, was die Client-Seite entscheidet. Fehlt dir auf dem Server die Sprech-Berechtigung (Talk-Power), oder blockt ein anderes Plugin, kommt nichts an.
 - **Kanal-Codec**: unten wird der Codec deines Kanals angezeigt. *Opus Voice* ist mono und sprachoptimiert; für Musik im Kanal besser **Opus Music** (Kanal bearbeiten →
   Codec, möglichst Qualität 10; braucht Kanal-Rechte). Das Plugin ändert den Kanal nicht selbst.
-- **Qualität** (plugin-intern): *Niedrige Latenz* (40 ms Puffer), *Ausgewogen* (60 ms), *Stabil* (140 ms, für wackelige Rechner/Apps). **Mono einspielen** mischt die Musik als Mono ein.
-- **Klang für Opus optimieren** (Standard: an): bereitet die Musik auf die Übertragung vor, damit der Codec möglichst wenig kaputt macht: Hochpass bei 25 Hz (Gleichanteil und Rumpeln kosten nur Bits),
-  **phasensichere Mono-Summe** (gegenphasige Stereo-Anteile löschen sich bei der einfachen Summe aus – sie werden erkannt, der Pegel bleibt erhalten) und ein weicher **Begrenzer** (≈ −1,7 dBFS), weil Opus an Pegelspitzen hörbar verzerrt.
-  Die Mono-Summe gilt bei Mono-Mikrofon, bei „Mono einspielen“ und bei einem Opus-Voice-Kanal; sonst bleibt Stereo erhalten (nur Hochpass + Begrenzer). Intern bleibt die Musik bis zu diesem Punkt Stereo (Equalizer, Pegel, Tonspur).
-- **Vorschau wie Opus** (Standard: an): *Mithören* und *Einstellungen anhören* schicken die Musik lokal durch einen Opus-Encoder/-Decoder, damit du hörst, wie sie nach dem Codec klingt
-  (Opus Voice = Mono, Opus Music = Stereo). Die Bitrate liest das Plugin von TeamSpeak (`getEncodeConfigValue`), alle 2 s aktualisiert; die Statuszeile zeigt z.B. „Opus Voice · Mono · 34 kbit/s“.
-  Meldet TS3 keine Bitrate (z.B. bei „Test starten“), steht dort „(geschätzt)“ – dann wird sie aus der Kanalqualität abgeschätzt.
-  **Das ist eine Näherung, kein bitgenaues Abbild:** TeamSpeaks genaue Encoder-Einstellungen (Komplexität, Paketverlust, Bandbreite) sind nicht bekannt. Die Vorschau fügt ca. 20 ms Verzögerung hinzu.
-  Auf die tatsächlich gesendete Musik hat sie keinen Einfluss.
-  **Grenze:** Ist der Kanal auf *Opus Voice* gestellt, bleibt die Übertragung **mono** (SDK: 48 kHz, mono) – für alle Hörer. Stereo kommt nur mit dem Kanal-Codec *Opus Music* an.
 - Unten: Diagnosezeile (Puffer, Aussetzer, Takt-Korrektur). Dieselben Werte stehen alle 5 s im TS3-Log (Kanal `VoiceTune`).
 
 ### Seite „Dateien“
@@ -100,10 +79,41 @@ Die Auswahl wird gespeichert; startet die App später neu, verbindet sich das Pl
 Bei Browsern wird der gesamte Browser-Ton aufgenommen (nicht nur ein Tab).
 
 ### Seite „Sounds“ (Soundboard)
-- 8 Plätze für kurze Clips (Jingles, bis 30 s, jedes Format der Dateien-Seite). Eine Datei auf eine Kachel ziehen belegt sie, mehrere Dateien füllen freie Plätze; eine leere Kachel anklicken öffnet den Datei-Dialog.
+- 8 Plätze für kurze Clips (Jingles, bis 30 s, jedes Format der Dateien-Seite). Eine Datei auf eine Kachel ziehen belegt sie, mehrere Dateien füllen freie Plätze; eine leere Kachel (nur ein „+“) anklicken öffnet den Datei-Dialog. Der Hinweis dazu steht einmal über dem Raster.
 - **Klick** spielt den Clip über Musik und Mikrofon (bis zu 4 gleichzeitig; derselbe Clip startet von vorn). **Rechtsklick**: Umbenennen, Datei ersetzen, Entfernen. **Alle stoppen** beendet alles. Der Regler **Sound-Lautstärke** (0–200 %) gilt für alle Clips.
 - Clips funktionieren auch ohne Musikquelle und bei stummem Mikrofon; sie gehen durch Optimierung/Begrenzer und werden beim Mithören mitgehört. Beim ersten Abspielen schaltet sich „Musik einspielen“ bei Bedarf ein.
 - Hotkeys *Sound 1 … 8* und *Alle Sounds stoppen*, per Stream Deck `/cmd/sound/<1-8>`. Die Zuordnung (Pfade und Namen) wird gespeichert; Clips werden beim Start neu geladen.
+
+### Einstellungen (Zahnrad-Popup)
+Das Zahnrad öffnet das Popup, ein zweiter Klick auf das Zahnrad, ein Klick neben das Panel oder **Esc** schließt es. Zwei Spalten, oben das Häufige, unten ein einklappbarer Bereich **Erweitert** (ob er offen ist, merkt sich das Plugin; Standard: zu).
+- **Allgemein**: die **Oberflächensprache** (*Automatisch* richtet sich nach Windows – nicht Deutsch → English –, *Deutsch*, *English*; wirkt sofort) und der Knopf **Hotkeys festlegen …**, der die Hotkey-Einstellungen von TeamSpeak öffnet.
+  Die Plugin-Menüeinträge im Plugins-Menü und die Hotkey-Beschreibungen folgen der Sprache erst beim nächsten Start von TeamSpeak.
+- **Titel melden**: bei einem Titelwechsel (Dateititel oder Titel im Fenster der App, z.B. „Artist - Song“ bei Spotify) erscheint eine Zeile *♪ Spielt: …* – standardmäßig im **eigenen Chat**. Optional **im Kanal-Chat**
+  (alle im Kanal sehen es, deshalb standardmäßig aus) oder **in den Client-Metadaten** (dein TeamSpeak-Metadatenfeld, beim Ausschalten wird der alte Wert wiederhergestellt). Gemeldet wird erst, wenn der Titel 3 s stabil ist, nie doppelt, und nur bei eingeschalteter Musik.
+- **Senden**:
+  - **Musik immer senden**: überträgt die Musik auch ohne Push-to-Talk/Sprachaktivierung.
+  - **Mono einspielen** mischt die Musik als Mono ein.
+  - **Qualität** (plugin-intern): *Niedrige Latenz* (40 ms Puffer), *Ausgewogen* (60 ms), *Stabil* (140 ms, für wackelige Rechner/Apps).
+- **Info**: zeigt, ob die Stream-Deck-Schnittstelle läuft („aktiv · Port 19470“) oder der Port belegt ist, dazu die Plugin-Version, die Autoren (**Dave Swift × Michael Schulz**, in Schreibschrift; dezent auch unten rechts in der Fußzeile) und das Motto *Your Sound. Your Voice. Your Way. Your Tune!*.
+- **Erweitert** (aufklappen mit Klick auf die Zeile): Dinge, die man normalerweise nicht anfasst – deshalb hier und nicht auf den Hauptseiten. Geht beim Musikmodus etwas schief, erscheint auf der Seite *Quelle & Mix* ein orangefarbener Hinweis, der hierher verweist.
+  - **Musikmodus** (Standard: an, bitte eingeschaltet lassen): TeamSpeak ruft das Plugin *nach* seiner Vorverarbeitung auf. Die Sprachaktivierung startet daher nie von selbst eine Übertragung, nur weil
+    das Plugin Musik einmischt: Die Musik käme erst durch, wenn du einmal sprichst. Solange Musik läuft, schaltet das Plugin deshalb – wie ein Soundboard-Plugin – auf **Dauersenden**:
+    Sprachaktivierung aus, Mikrofon-Eingang aktiv (auch bei Push-to-Talk), Änderungen sofort an TS3 übergeben; das alles im Mikrofon-Callback. Dazu schaltet es
+    Rauschfilter und Auto-Pegel ab, weil sie Musik verschlechtern. 2,5 s nach dem Ende der Musik stellt es exakt deine bisherigen Werte wieder her (auch beim Beenden). Das Plugin-eigene **Mikro-Gate**
+    (Schwelle −70…−25 dB, −70 = aus) hält währenddessen Tastatur- und Raumgeräusche vom Mikrofon fern. Voraussetzung ist „Musik immer senden“.
+    Jeder „Test starten“ in den Aufnahme-Einstellungen läuft auf einer **eigenen, neuen Verbindung** (im TS3-Log `schid 2`, `3`, …; dein Server ist meist `schid 1`) mit eigener Vorverarbeitung:
+    der Musikmodus folgt dem automatisch, setzt die alte Verbindung zurück und schaltet die neue um.
+    Kontrolle: Unter dem Schalter steht, ob TS3 die Musik wirklich sendet („TS3 sendet nicht“ in Orange: dann steht im TS3-Log eine Zeile „Diagnose“ mit vad, Eingang, Stumm und Talk-Power der Verbindung).
+    Hinweis: Das Plugin kann nur umgehen, was die Client-Seite entscheidet. Fehlt dir auf dem Server die Sprech-Berechtigung (Talk-Power), oder blockt ein anderes Plugin, kommt nichts an.
+  - **Klang für Opus optimieren** (Standard: an): bereitet die Musik auf die Übertragung vor, damit der Codec möglichst wenig kaputt macht: Hochpass bei 25 Hz (Gleichanteil und Rumpeln kosten nur Bits),
+    **phasensichere Mono-Summe** (gegenphasige Stereo-Anteile löschen sich bei der einfachen Summe aus – sie werden erkannt, der Pegel bleibt erhalten) und ein weicher **Begrenzer** (≈ −1,7 dBFS), weil Opus an Pegelspitzen hörbar verzerrt.
+    Die Mono-Summe gilt bei Mono-Mikrofon, bei „Mono einspielen“ und bei einem Opus-Voice-Kanal; sonst bleibt Stereo erhalten (nur Hochpass + Begrenzer). Intern bleibt die Musik bis zu diesem Punkt Stereo (Equalizer, Pegel, Tonspur).
+  - **Vorschau wie Opus** (Standard: an): *Mithören* und *Einstellungen anhören* schicken die Musik lokal durch einen Opus-Encoder/-Decoder, damit du hörst, wie sie nach dem Codec klingt
+    (Opus Voice = Mono, Opus Music = Stereo). Die Bitrate liest das Plugin von TeamSpeak (`getEncodeConfigValue`), alle 2 s aktualisiert; die Statuszeile zeigt z.B. „Opus Voice · Mono · 34 kbit/s“.
+    Meldet TS3 keine Bitrate (z.B. bei „Test starten“), steht dort „(geschätzt)“ – dann wird sie aus der Kanalqualität abgeschätzt.
+    **Das ist eine Näherung, kein bitgenaues Abbild:** TeamSpeaks genaue Encoder-Einstellungen (Komplexität, Paketverlust, Bandbreite) sind nicht bekannt. Die Vorschau fügt ca. 20 ms Verzögerung hinzu.
+    Auf die tatsächlich gesendete Musik hat sie keinen Einfluss.
+    **Grenze:** Ist der Kanal auf *Opus Voice* gestellt, bleibt die Übertragung **mono** (SDK: 48 kHz, mono) – für alle Hörer. Stereo kommt nur mit dem Kanal-Codec *Opus Music* an.
 
 ### Hotkeys
 Im TeamSpeak-Hotkey-Dialog (*Einstellungen → Hotkeys → Plugins → VoiceTune* – oder über „Hotkeys …“ im Fenster) gibt es: Musik an/aus, Mikrofon stumm/laut, Musik lauter/leiser, Datei-Player Play/Pause, nächster/vorheriger Titel, Mithören an/aus, nächstes Profil, Sound 1–8, Alle Sounds stoppen.
@@ -139,6 +149,6 @@ build\ts3_host_test.exe build\VoiceTune_win64.dll [--mix 10 out.raw | --monitor 
 ```
 `ts3_host_test` stellt TeamSpeak nach: lädt die DLL, ruft die Exports in Client-Reihenfolge auf und treibt den Mikrofon-Callback im 20-ms-Takt (`--mix`),
 zusätzlich den Wiedergabe-Callback für das Mithören (`--monitor`), löst die Menü-Aktion samt Chat-Meldung aus (`--toggle`) oder öffnet das Fenster und speichert Screenshots (`--ui`).
-Mit den Umgebungsvariablen `AAM_FILES=<Ordner>` (Dateien-Seite per simuliertem Drop), `AAM_NEW=1` (Stumm-Knopf, Opus-Zeile), `AAM_UI3=<Ordner>` (Profile, Soundboard) und `AAM_EN=1` (alle Seiten auf Englisch) werden bestimmte Abläufe fotografiert
-(`AAM_HOLD=<Sekunden>` lässt das Fenster zum Anschauen offen);
+Mit den Umgebungsvariablen `AAM_FILES=<Ordner>` (Dateien-Seite per simuliertem Drop), `AAM_UI3=<Ordner>` (Profile, Soundboard) und `AAM_SET=1` (alle Seiten und das Einstellungs-Popup auf Deutsch und Englisch fotografieren, jedes Element des Popups bedienen und die gespeicherten Werte prüfen; Exit-Code 1 bei Abweichung) werden bestimmte Abläufe geprüft bzw. fotografiert
+(`AAM_HOLD=<Sekunden>` lässt das Fenster zum Anschauen offen, `AAM_LIVE=<Sekunden>` lässt es bedienbar offen, um es selbst auszuprobieren);
 `AAM_BITRATE=<bit/s>` setzt die vom nachgestellten TS3 gemeldete Opus-Bitrate. Das Testfenster ist für echte Maus- und Tastatureingaben gesperrt; die Einstellungen landen in `%TEMP%`, nicht in deinem TS3-Ordner.

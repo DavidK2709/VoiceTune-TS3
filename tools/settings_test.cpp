@@ -99,6 +99,7 @@ int main()
         t.nowPlayingChannel = true;
         t.nowPlayingMeta    = true;
         t.language          = 2;
+        t.advancedOpen      = true;
         SaveSettings(ini, t);
         const Settings u = LoadSettings(ini);
         CHECK(u.profiles.items.size() == 2 && u.profileName == L"Zocken", "Profile geladen: %zu", u.profiles.items.size());
@@ -114,10 +115,11 @@ int main()
         CHECK(u.soundVolPct == 150 && u.sounds[0].path == L"C:\\Sounds\\airhorn.wav" && u.sounds[0].name == L"Hupe" && u.sounds[7].path == L"D:\\Töne\\Ärger.mp3" &&
                   u.sounds[7].name == L"Ärger" && u.sounds[3].path.empty(), "Soundboard-Slots");
         CHECK(!u.nowPlayingChat && u.nowPlayingChannel && u.nowPlayingMeta && u.language == 2, "Now-Playing und Sprache");
+        CHECK(u.advancedOpen, "Erweitert aufgeklappt gespeichert");
 
         // Standardwerte einer leeren INI
         const Settings d = LoadSettings(ini + L".gibtsnicht");
-        CHECK(d.nowPlayingChat && !d.nowPlayingChannel && !d.nowPlayingMeta && d.language == 0 && d.soundVolPct == 100 && d.profiles.items.empty(), "Standardwerte");
+        CHECK(d.nowPlayingChat && !d.nowPlayingChannel && !d.nowPlayingMeta && d.language == 0 && d.soundVolPct == 100 && d.profiles.items.empty() && !d.advancedOpen, "Standardwerte (Erweitert zu)");
 
         // Obergrenze der Profile
         profiles::ProfileBook many;
