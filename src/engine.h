@@ -12,12 +12,14 @@
 #include "equalizer.h"
 #include "file_player.h"
 #include "gate.h"
+#include "i18n.h"
 #include "jitter_reader.h"
 #include "opus_preview.h"
 #include "playlist.h"
 #include "process_capture.h"
 #include "ring_buffer.h"
 #include "settings.h"
+#include "soundboard.h"
 #include "voice_optimizer.h"
 
 // Kodierung des aktuellen Kanals, wie sie TeamSpeak sendet (fuer die Opus-Vorschau)
@@ -104,6 +106,15 @@ public:
     void         ApplyBuiltinPreset(int index);
     void         ApplyUserPreset(const std::wstring& name);
 
+    // Profile / Szenen: benannte Schnappschuesse (Quelle, Lautstaerken, Mithoeren, Equalizer, Qualitaet, Opus). Alles wird sofort gespeichert.
+    PresetResult SaveProfile(const std::wstring& name);    // aktuelle Einstellungen unter diesem Namen sichern (gleicher Name = ueberschreiben) und auswaehlen
+    PresetResult RenameProfile(const std::wstring& from, const std::wstring& to);
+    bool         DeleteProfile(const std::wstring& name);
+    bool         ApplyProfile(const std::wstring& name);   // false, wenn es das Profil nicht gibt
+    std::vector<std::wstring> ProfileNames();
+    // Naechstes Profil reihum (Hotkey); false, wenn es keine Profile gibt.
+    bool         ApplyNextProfile();
+
     // Qualitaet (plugin-intern): 0 niedrige Latenz (40 ms), 1 ausgewogen (60 ms), 2 stabil (140 ms Puffer); Mono mischt die Musik als Mono ein.
     void SetQuality(int q);
     void SetMono(bool on);
@@ -135,6 +146,29 @@ public:
     // Name der aktuellen Quelle: laufender Dateititel oder die gewaehlte App ("Spotify")
     std::wstring SourceLabel();
 
+    // ---- Soundboard (8 Slots mit kurzen Clips, die ueber die Musik gespielt werden). Slots sind 0..7; alle Befehle sind aus jedem Thread aufrufbar.
+    struct SoundInfo {
+        std::wstring      name, path;
+        Soundboard::State state   = Soundboard::State::Empty;
+        double            seconds = 0;
+    };
+    void                   SoundSetSlot(int slot, const std::wstring& path); // Datei zuweisen (leer = Slot leeren), Name = Dateiname ohne Endung; wird gespeichert
+    void                   SoundRename(int slot, const std::wstring& name);
+    void                   SoundPlay(int slot);   // schaltet bei Bedarf "Musik einspielen" ein (wie Play im Datei-Player)
+    void                   SoundStop();           // alle Clips stoppen
+    void                   SetSoundVolume(int pct); // 0..200
+    std::vector<SoundInfo> GetSounds();
+
+    // Now-Playing: meldet einen Titelwechsel (Dateititel oder Fenstertitel der App, bereinigt), sobald er >= 3 s stabil ist und "Musik einspielen" an ist.
+    // Leerer Titel = nichts mehr zu melden (Musik aus). Aufruf aus dem Watcher-Thread. Welche Ziele (Chat, Kanal, Metadaten) gelten, steht in den Einstellungen.
+    void SetNowPlayingCallback(void (*fn)(const std::wstring& title)) { nowPlayingCb_ = fn; }
+    // Oberflaechensprache: 0 = automatisch, 1 = Deutsch, 2 = English (wird gespeichert und sofort uebernommen)
+    void SetLanguage(int setting);
+
+    void SetNowPlayingChat(bool on);
+    void SetNowPlayingChannel(bool on);
+    void SetNowPlayingMeta(bool on);
+
     // Zustandswechsel "Musik einspielen" (aus Menue oder Fenster), z.B. fuer eine Chat-Meldung. Vor Init setzen.
     void SetStateCallback(void (*fn)(bool enabled)) { stateCb_ = fn; }
 
@@ -151,7 +185,7 @@ public:
 
 private:
     Engine() : ring_(48000), reader_(ring_), monitorRing_(48000 * 3), monitorReader_(monitorRing_), fileRing_(48000), fileReader_(fileRing_) {}
-    bool SourceOn() const { return capturing_.load() || fileActive_.load(); } // irgendeine Quelle (App oder Datei) liefert Audio
+    bool SourceOn() const { return capturing_.load() || fileActive_.load() || sounds_.Active(); } // irgendeine Quelle (App, Datei oder Soundboard) liefert Audio
     void UpdateStats();
     void WatcherMain();
     void SetStatus(const std::wstring& s);
@@ -165,6 +199,8 @@ private:
     std::atomic<float> musicGain_{1.0f};
     std::atomic<float> micGain_{1.0f};
     std::atomic<bool>  micMuted_{false};
+    Soundboard         sounds_;
+    std::atomic<float> soundGain_{1.0f};
     std::atomic<bool>  alwaysSend_{true};
     std::atomic<bool>  capturing_{false};
 
@@ -247,6 +283,10 @@ private:
     MicGate               gate_;                // Audio-Thread
     void                  ManageMusicMode(uint64_t schid, int frames); // Audio-Thread: TS3-Filter/Sprachaktivierung umgehen bzw. wiederherstellen
     void                  UpdateCodec();
+    void                  UpdateNowPlaying(); // Watcher
+    void                (*nowPlayingCb_)(const std::wstring&) = nullptr;
+    std::wstring          npLast_, npCand_;   // Watcher: zuletzt gemeldeter bzw. gerade beobachteter Titel
+    ULONGLONG             npTick_ = 0, npSince_ = 0;
     void                (*stateCb_)(bool) = nullptr;
     int64_t                        holdFrames_ = 0; // Audio-Thread: Rest-Haltezeit des Sende-Bits
 

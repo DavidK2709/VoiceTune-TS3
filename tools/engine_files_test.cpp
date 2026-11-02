@@ -251,6 +251,131 @@ int main(int argc, char** argv)
         en.SetOpusPreview(true);
     }
 
+    // ---- 6. Soundboard: Clip ueber das Mikrofon, auch ohne Musikquelle ------------------------------------------------------------------------
+    {
+        en.SetEnabled(false);
+        en.PlayerClear();
+        g_micNoise = 0;
+        en.SoundSetSlot(0, wav);
+        for (int i = 0; i < 400 && en.GetSounds()[0].state != Soundboard::State::Ready; ++i) Sleep(20);
+        const auto sounds = en.GetSounds();
+        CHECK(sounds.size() == 8 && sounds[0].state == Soundboard::State::Ready && sounds[0].name == L"tone" && sounds[0].seconds > 5.5, "Slot geladen (%zu, Name '%ls')", sounds.size(), sounds[0].name.c_str());
+        en.SoundPlay(0);
+        CHECK(en.GetSettings().enabled, "Sound schaltet \"Musik einspielen\" ein");
+        const size_t k0 = RunFor(1800);
+        CHECK(Peak(k0, 0.4, 0.3) > 300 && std::fabs(Freq(k0, 0.4) - 440) < 12, "Sound ohne Musikquelle (Spitze %d, %.0f Hz)", Peak(k0, 0.4, 0.3), Freq(k0, 0.4));
+        const int full = Peak(k0, 0.4, 0.4);
+        en.SoundStop();
+        RunFor(300);
+        const size_t k1 = RunFor(500);
+        CHECK(Peak(k1, 0.1, 0.3) == 0, "nach Stopp still (%d)", Peak(k1, 0.1, 0.3));
+
+        en.SetSoundVolume(50);
+        en.SoundPlay(0);
+        const size_t k2 = RunFor(1500);
+        const int    half = Peak(k2, 0.4, 0.4);
+        CHECK(half > full * 0.4 && half < full * 0.6, "Sound-Lautstaerke 50 %%: %d gegen %d", half, full);
+        en.SoundStop();
+        en.SetSoundVolume(100);
+
+        // Mit stummem Mikrofon und Mikrofonrauschen: nur der Sound
+        g_micNoise = 3000;
+        en.SetMicMuted(true);
+        en.SoundPlay(0);
+        const size_t k3 = RunFor(1500);
+        CHECK(Peak(k3, 0.4, 0.4) > 300 && Peak(k3, 0.4, 0.4) < 2500 && std::fabs(Freq(k3, 0.4) - 440) < 12, "Sound bei stummem Mikro (Spitze %d, %.0f Hz)", Peak(k3, 0.4, 0.4), Freq(k3, 0.4));
+        en.SoundStop();
+        en.SetMicMuted(false);
+        g_micNoise = 0;
+
+        en.SoundRename(0, L"  Hupe \"laut\"  ");
+        CHECK(en.GetSounds()[0].name == L"Hupe 'laut'", "Umbenennen bereinigt");
+        en.SoundSetSlot(0, L"");
+        CHECK(en.GetSounds()[0].state == Soundboard::State::Empty && en.GetSounds()[0].path.empty(), "Slot geleert");
+        en.SoundPlay(0); // leerer Slot: nichts
+        en.SoundPlay(17);
+        const size_t k4 = RunFor(400);
+        CHECK(Peak(k4, 0.1, 0.2) == 0, "leerer/ungueltiger Slot bleibt still");
+        en.SetEnabled(true);
+    }
+
+    // ---- 7. Profile ------------------------------------------------------------------------------------------------------------------------
+    {
+        en.SetMusicVolume(80);
+        en.SetMicVolume(90);
+        en.SetQuality(2);
+        en.SetMono(true);
+        en.SetEqBands(61);
+        en.SetEqGain(10, 6.0f);
+        en.SetMonitorDelay(300);
+        en.SetOptimizeForOpus(false);
+        CHECK(en.SaveProfile(L"Test A") == PresetResult::Ok && en.GetSettings().profileName == L"Test A", "Profil speichern");
+        const Profile saved = ProfileFromSettings(en.GetSettings());
+        CHECK(SameProfile(saved, ProfileFromSettings(en.GetSettings())), "unveraendert = gleich");
+
+        en.SetMusicVolume(120);
+        en.SetMicVolume(50);
+        en.SetQuality(0);
+        en.SetMono(false);
+        en.SetEqBands(10);
+        en.SetMonitorDelay(100);
+        en.SetOptimizeForOpus(true);
+        CHECK(!SameProfile(saved, ProfileFromSettings(en.GetSettings())), "geaendert = verschieden");
+        CHECK(en.SaveProfile(L"Test B") == PresetResult::Ok, "zweites Profil");
+
+        CHECK(en.ApplyProfile(L"test a"), "Profil anwenden (Gross-/Kleinschreibung egal)");
+        const Settings a = en.GetSettings();
+        CHECK(a.musicVolPct == 80 && a.micVolPct == 90 && a.quality == 2 && a.mono && a.eqBands == 61 && a.eqGains.size() == 61 && a.eqGains[10] == 6.0f && a.monitorDelayMs == 300 &&
+                  !a.optimizeForOpus && a.profileName == L"Test A",
+              "Werte aus dem Profil: %d %d %d %d %d", a.musicVolPct, a.micVolPct, a.quality, a.mono, a.eqBands);
+        CHECK(SameProfile(saved, ProfileFromSettings(a)), "nach Anwenden gleich dem Profil");
+        CHECK(!en.ApplyProfile(L"gibt es nicht"), "unbekanntes Profil");
+
+        CHECK(en.ApplyNextProfile() && en.GetSettings().profileName == L"Test B" && en.GetSettings().musicVolPct == 120 && en.GetSettings().eqBands == 10, "naechstes Profil");
+        CHECK(en.ApplyNextProfile() && en.GetSettings().profileName == L"Test A", "reihum");
+        CHECK(en.RenameProfile(L"Test A", L"Alpha") == PresetResult::Ok && en.GetSettings().profileName == L"Alpha", "Umbenennen aktualisiert das gewaehlte");
+        CHECK(en.ProfileNames().size() == 2 && en.ProfileNames()[0] == L"Alpha", "Namen");
+        CHECK(en.DeleteProfile(L"Alpha") && en.GetSettings().profileName.empty() && en.ProfileNames().size() == 1, "Loeschen leert die Auswahl");
+        CHECK(en.DeleteProfile(L"Test B") && !en.ApplyNextProfile(), "ohne Profile: nichts zu wechseln");
+        en.SetMusicVolume(100);
+        en.SetMicVolume(100);
+        en.SetQuality(1);
+        en.SetMono(false);
+        en.SetOptimizeForOpus(true);
+        en.SetMonitorDelay(250);
+    }
+
+    // ---- 8. Now-Playing: Titelwechsel melden (Datei), einmal je Titel, leer bei "Musik aus" -------------------------------------------------------
+    {
+        static std::vector<std::wstring> got;
+        got.clear();
+        en.SetNowPlayingCallback([](const std::wstring& t) { got.push_back(t); });
+        en.SetNowPlayingChat(true);
+        en.SetEnabled(true);
+        en.PlayerClear();
+        en.PlayerAdd({wav, mp3});
+        en.PlayerSetRepeat(RepeatMode::Off);
+        en.PlayerPlay(0);
+        RunFor(2000);
+        CHECK(got.empty(), "nach 2 s noch keine Meldung (3 s Beruhigung): %zu", got.size());
+        RunFor(2800);
+        CHECK(got.size() == 1 && got[0] == L"tone", "genau eine Meldung 'tone' nach ~5 s (%zu)", got.size());
+        RunFor(1500);
+        CHECK(got.size() == 1, "keine Wiederholung bei gleichem Titel (%zu)", got.size());
+        en.PlayerTogglePause();
+        RunFor(1800);
+        en.PlayerTogglePause();
+        RunFor(3500);
+        CHECK(got.size() == 1, "Pause/Weiter meldet nicht erneut (%zu)", got.size());
+        en.SetEnabled(false);
+        RunFor(1500);
+        CHECK(got.size() == 2 && got[1].empty(), "Musik aus: leere Meldung (%zu)", got.size());
+        en.SetNowPlayingChat(false);
+        en.PlayerStop();
+        en.SetNowPlayingCallback(nullptr);
+        en.SetEnabled(true);
+    }
+
     timeEndPeriod(1);
     en.Shutdown();
     if (argc > 2)

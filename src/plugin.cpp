@@ -10,6 +10,7 @@
 #include <string>
 
 #include "app_discovery.h"
+#include "commands.h"
 #include "config_dialog.h"
 #include "engine.h"
 #include "remote.h"
@@ -60,9 +61,107 @@ void OnStateChanged(bool on)
     const std::string color = on ? "#2ECC71" : "#B0171F";
 
     const std::string bar  = "[color=" + color + "]━━━━━━━━━━━━━━━━━━━━━━━━━━[/color]";
-    const std::string line = "[b][color=" + color + "]  " + (on ? "♪  MUSIK AN" : "■  MUSIK AUS") + "[/color][/b]  [color=#8A90A0]·[/color]  [b]" + app + "[/b]";
+    const std::string line = "[b][color=" + color + "]  " + Tr8(on ? "♪  MUSIK AN" : "■  MUSIK AUS") + "[/color][/b]  [color=#8A90A0]·[/color]  [b]" + app + "[/b]";
     const std::string msg  = bar + "\n" + line + "\n" + bar;
     ts3Functions.printMessageToCurrentTab(msg.c_str());
+}
+
+// Stream-Deck-Schnittstelle konnte nicht starten (meist: Port belegt, weil schon ein zweites TeamSpeak mit VoiceTune laeuft): Hinweis im TS3-Client.
+// Beim Plugin-Start gibt es evtl. noch keinen sichtbaren Tab, deshalb wird er beim ersten Verbinden mit einem Server noch einmal gezeigt.
+bool           g_remoteDown = false, g_remoteNoticePending = false;
+unsigned short g_remotePort = 0;
+
+void PrintRemoteNotice()
+{
+    std::string text = Tr8("Die Stream-Deck-Schnittstelle ist aktuell nicht verfügbar. Der Port %s ist belegt – vermutlich läuft schon ein zweites TeamSpeak mit VoiceTune. Das Stream Deck steuert nur die erste Instanz. Alles andere im Plugin funktioniert normal.");
+    const size_t pos = text.find("%s");
+    if (pos != std::string::npos) text.replace(pos, 2, std::to_string(g_remotePort));
+    const std::string msg = "[color=#E67E22][b]VoiceTune:[/b] " + text + "[/color]";
+    ts3Functions.printMessageToCurrentTab(msg.c_str());
+}
+
+void OnRemoteUnavailable(unsigned short port)
+{
+    g_remoteDown          = true;
+    g_remoteNoticePending = true;
+    g_remotePort          = port;
+    Log(("Stream-Deck-Schnittstelle nicht verfügbar (Port " + std::to_string(port) + " belegt)").c_str());
+    PrintRemoteNotice();
+}
+
+// Chat-Zeile bei Befehlen per Hotkey/Stream Deck, die kein eigenes Banner haben (Stumm). Stil wie das An/Aus-Banner.
+void OnCommandFeedback(const char* kind, bool on)
+{
+    if (std::strcmp(kind, "micmute") != 0) return;
+    const std::string msg = on ? "[b][color=#B0171F]" + Tr8("■  MIKROFON STUMM") + "[/color][/b]" : "[b][color=#2ECC71]" + Tr8("●  MIKROFON AKTIV") + "[/color][/b]";
+    ts3Functions.printMessageToCurrentTab(msg.c_str());
+}
+
+// ------------------------------------------------------------------------------------------------------------------------------------------------
+// Now-Playing: Titelwechsel in den eigenen Chat, optional in den Kanal-Chat und/oder die Client-Metadaten (alles nur auf der aktuellen Verbindung).
+std::string g_metaOriginal;           // Metadaten des Nutzers, bevor wir sie ueberschrieben haben
+bool        g_metaSet = false;
+uint64      g_metaSchid = 0;
+
+// "[" im Titel wuerde TS3 als BBCode lesen
+std::string EscapeBB(const std::string& in)
+{
+    std::string out;
+    for (char c : in) {
+        if (c == '[') out += '\\';
+        out += c;
+    }
+    return out;
+}
+
+void RestoreMeta()
+{
+    if (!g_metaSet) return;
+    g_metaSet = false;
+    ts3Functions.setClientSelfVariableAsString(g_metaSchid, CLIENT_META_DATA, g_metaOriginal.c_str());
+    ts3Functions.flushClientSelfUpdates(g_metaSchid, nullptr);
+}
+
+void OnNowPlaying(const std::wstring& title)
+{
+    if (title.empty()) { // Musik aus: Metadaten zuruecksetzen
+        RestoreMeta();
+        return;
+    }
+    const Settings    s     = Engine::Get().GetSettings();
+    const std::string t     = WideToUtf8(title);
+    const uint64      schid = ts3Functions.getCurrentServerConnectionHandlerID();
+
+    if (s.nowPlayingChat) {
+        const std::string msg = "[color=#4C8DFF]♪[/color] [b]" + Tr8("Spielt:") + "[/b] " + EscapeBB(t);
+        ts3Functions.printMessageToCurrentTab(msg.c_str());
+    }
+    if (s.nowPlayingChannel) { // erreicht alle im Kanal: nur auf ausdruecklichen Wunsch
+        anyID  me = 0;
+        uint64 ch = 0;
+        if (ts3Functions.getClientID(schid, &me) == ERROR_ok && ts3Functions.getChannelOfClient(schid, me, &ch) == ERROR_ok && ch != 0) {
+            const std::string msg = Tr8("♪ Spielt: ") + EscapeBB(t);
+            ts3Functions.requestSendChannelTextMsg(schid, msg.c_str(), ch, nullptr);
+        }
+    }
+    if (s.nowPlayingMeta) {
+        if (!g_metaSet) {
+            char* cur = nullptr;
+            g_metaOriginal.clear();
+            if (ts3Functions.getClientSelfVariableAsString(schid, CLIENT_META_DATA, &cur) == ERROR_ok && cur) {
+                g_metaOriginal = cur;
+                ts3Functions.freeMemory(cur);
+            }
+        }
+        const std::string meta = "♪ " + t;
+        if (ts3Functions.setClientSelfVariableAsString(schid, CLIENT_META_DATA, meta.c_str()) == ERROR_ok) {
+            ts3Functions.flushClientSelfUpdates(schid, nullptr);
+            g_metaSet   = true;
+            g_metaSchid = schid;
+        }
+    } else {
+        RestoreMeta(); // Schalter wurde ausgeschaltet
+    }
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------
@@ -247,7 +346,10 @@ EXPORT const char* ts3plugin_description()
            "• Equalizer mit 10, 31 oder 61 Bändern, Presets und eigenen Filtern, Live-Spektrum und Tonspur\n"
            "• Musikmodus: Musik kommt auch ohne Sprechen durch (umgeht Sprachaktivierung und Sprachfilter, mit Mikro-Gate)\n"
            "• Mithören und Anhören mit einstellbarer Verzögerung und Opus-Vorschau: höre, wie es bei den anderen ankommt\n"
-           "• Klang-Optimierung für Opus, Lautstärken, Mikrofon-Stumm, Chat-Meldungen\n\n"
+           "• Klang-Optimierung für Opus, Lautstärken, Mikrofon-Stumm, Chat-Meldungen\n"
+           "• Soundboard mit 8 Jingle-Plätzen, Profile (Szenen), globale Hotkeys, Titelanzeige im Chat, Stream-Deck-Schnittstelle\n\n"
+           "Plays the audio of any Windows app (Spotify, YouTube, Discord …) or your own audio files into your TeamSpeak microphone – with per-app capture, "
+           "equalizer, monitoring, Opus preview, soundboard, profiles, hotkeys and a Stream Deck interface. The window is available in German and English.\n\n"
            "Your Sound. Your Voice. Your Way. Your Tune!";
 }
 
@@ -264,7 +366,11 @@ EXPORT int ts3plugin_init()
     Engine::Get().SetEncodeCallback(ChannelEncodeInfo);
     Engine::Get().SetDiagCallback(SelfStateReport);
     Engine::Get().Init(Utf8ToWide(configPath));
-    RemoteStart();  
+    SetHotkeySetupHandler([] { ts3Functions.showHotkeySetup(); });
+    Engine::Get().SetNowPlayingCallback(OnNowPlaying);
+    SetCommandNotifier(OnCommandFeedback);
+    RemoteSetUnavailableCallback(OnRemoteUnavailable);
+    RemoteStart();
     Log("VoiceTune geladen");
     return 0;
 }
@@ -273,6 +379,7 @@ EXPORT void ts3plugin_shutdown()
 {
     RemoteStop();
     CloseConfigDialog();
+    RestoreMeta();
     Engine::Get().Shutdown();
     if (g_pluginId) {
         std::free(g_pluginId);
@@ -283,6 +390,15 @@ EXPORT void ts3plugin_shutdown()
 EXPORT void ts3plugin_freeMemory(void* data) { std::free(data); }
 
 EXPORT int ts3plugin_requestAutoload() { return 1; } // nach der Installation von selbst aktiv (der Nutzer kann es in den Plugin-Einstellungen abschalten)
+
+// Erste erfolgreiche Verbindung: Hinweis zur Stream-Deck-Schnittstelle (falls sie nicht starten konnte) dort zeigen, wo der Nutzer gerade ist
+EXPORT void ts3plugin_onConnectStatusChangeEvent(uint64 serverConnectionHandlerID, int newStatus, unsigned int errorNumber)
+{
+    if (g_remoteDown && g_remoteNoticePending && newStatus == STATUS_CONNECTION_ESTABLISHED) {
+        g_remoteNoticePending = false;
+        PrintRemoteNotice();
+    }
+}
 
 EXPORT int ts3plugin_offersConfigure() { return PLUGIN_OFFERS_CONFIGURE_NEW_THREAD; }
 
@@ -298,8 +414,8 @@ EXPORT void ts3plugin_registerPluginID(const char* id)
 EXPORT void ts3plugin_initMenus(struct PluginMenuItem*** menuItems, char** menuIcon)
 {
     *menuItems    = static_cast<PluginMenuItem**>(std::malloc(sizeof(PluginMenuItem*) * 3));
-    (*menuItems)[0] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_TOGGLE, "Musik einspielen: Ein/Aus", "toggle.png");
-    (*menuItems)[1] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_CONFIG, "Einstellungen...", "settings.png");
+    (*menuItems)[0] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_TOGGLE, Tr8("Musik einspielen: Ein/Aus").c_str(), "toggle.png");
+    (*menuItems)[1] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_CONFIG, Tr8("Einstellungen...").c_str(), "settings.png");
     (*menuItems)[2] = nullptr;
     *menuIcon       = static_cast<char*>(std::malloc(PLUGIN_MENU_BUFSZ));
     std::strcpy(*menuIcon, "plugin.png");
@@ -316,6 +432,27 @@ EXPORT void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum Plu
 }
 
 // Mithoeren: gemischte Wiedergabe des Clients. Nur fuer den aktiven Server-Tab, sonst wuerde die Musik pro Tab doppelt eingemischt.
+// Hotkeys: die Belegung macht der Nutzer in TS3 (Einstellungen -> Hotkeys -> Plugins -> VoiceTune); Array und Eintraege werden mit malloc angelegt
+// und von TS3 ueber ts3plugin_freeMemory freigegeben (wie die Menue-Eintraege).
+EXPORT void ts3plugin_initHotkeys(struct PluginHotkey*** hotkeys)
+{
+    const auto& list = HotkeyList();
+    *hotkeys         = static_cast<PluginHotkey**>(std::malloc(sizeof(PluginHotkey*) * (list.size() + 1)));
+    for (size_t i = 0; i < list.size(); ++i) {
+        auto* h = static_cast<PluginHotkey*>(std::malloc(sizeof(PluginHotkey)));
+        std::memset(h, 0, sizeof(*h));
+        std::strncpy(h->keyword, list[i].keyword, PLUGIN_HOTKEY_BUFSZ - 1);
+        std::strncpy(h->description, Tr8(list[i].description).c_str(), PLUGIN_HOTKEY_BUFSZ - 1);
+        (*hotkeys)[i] = h;
+    }
+    (*hotkeys)[list.size()] = nullptr;
+}
+
+EXPORT void ts3plugin_onHotkeyEvent(const char* keyword)
+{
+    if (keyword) RunHotkey(keyword);
+}
+
 EXPORT void ts3plugin_onEditMixedPlaybackVoiceDataEvent(uint64 serverConnectionHandlerID, short* samples, int sampleCount, int channels,
                                                         const unsigned int* channelSpeakerArray, unsigned int* channelFillMask)
 {

@@ -60,6 +60,76 @@ int main()
     SaveSettings(ini, s);
     CHECK(LoadSettings(ini).hiddenApps.empty(), "alle eingeblendet");
 
+    // ---- Profile, Sounds, Now-Playing, Sprache -------------------------------------------------------------------------------------------
+    {
+        Settings t;
+        Profile  a;
+        a.targetExe = L"spotify.exe";
+        a.musicVolPct = 80;
+        a.micVolPct = 120;
+        a.monitor = true;
+        a.monitorDelayMs = 400;
+        a.eqEnabled = false;
+        a.eqBands = 61;
+        a.eqGains.assign(61, 0.0f);
+        a.eqGains[7] = -4.5f;
+        a.eqPresetName = L"Wärme";
+        a.quality = 2;
+        a.mono = true;
+        a.optimizeForOpus = false;
+        a.opusPreview = false;
+        CHECK(t.profiles.Save(L"  Stream \"Abend\"  ", a) == PresetResult::Ok, "Profil anlegen");
+        CHECK(t.profiles.Find(L"stream 'abend'") != nullptr, "Name bereinigt und ohne Beachtung der Gross-/Kleinschreibung gefunden");
+        Profile b = a;
+        b.targetExe = L"chrome.exe";
+        b.eqBands = 10;
+        b.eqGains.assign(10, 2.0f);
+        CHECK(t.profiles.Save(L"Gaming", b) == PresetResult::Ok && t.profiles.Save(L"GAMING", b) == PresetResult::Updated && t.profiles.items.size() == 2, "gleicher Name ueberschreibt");
+        CHECK(t.profiles.Save(L"   ", a) == PresetResult::Empty, "leerer Name");
+        CHECK(t.profiles.Rename(L"Gaming", L"Stream 'Abend'") == PresetResult::Exists, "Umbenennen auf vorhandenen Namen");
+        CHECK(t.profiles.Rename(L"Gaming", L"Zocken") == PresetResult::Ok && !t.profiles.Find(L"Gaming") && t.profiles.Find(L"Zocken"), "Umbenennen");
+        CHECK(t.profiles.Rename(L"gibt es nicht", L"X") == PresetResult::NotFound, "Umbenennen: nicht gefunden");
+        CHECK(t.profiles.SuggestName() == L"Profil 1" && t.profiles.NextAfter(L"Stream 'Abend'") == L"Zocken" && t.profiles.NextAfter(L"Zocken") == L"Stream 'Abend'" &&
+                  t.profiles.NextAfter(L"unbekannt") == L"Stream 'Abend'", "Vorschlag und Reihum");
+        t.profileName = L"Zocken";
+        t.soundVolPct = 150;
+        t.sounds[0] = {L"C:\\Sounds\\airhorn.wav", L"Hupe"};
+        t.sounds[7] = {L"D:\\Töne\\Ärger.mp3", L"Ärger"};
+        t.nowPlayingChat    = false;
+        t.nowPlayingChannel = true;
+        t.nowPlayingMeta    = true;
+        t.language          = 2;
+        SaveSettings(ini, t);
+        const Settings u = LoadSettings(ini);
+        CHECK(u.profiles.items.size() == 2 && u.profileName == L"Zocken", "Profile geladen: %zu", u.profiles.items.size());
+        if (const Profile* p = u.profiles.Find(L"Stream 'Abend'")) {
+            CHECK(p->targetExe == L"spotify.exe" && p->musicVolPct == 80 && p->micVolPct == 120 && p->monitor && p->monitorDelayMs == 400 && !p->eqEnabled && p->eqBands == 61 &&
+                      p->eqGains.size() == 61 && p->eqGains[7] == -4.5f && p->eqPresetName == L"Wärme" && p->quality == 2 && p->mono && !p->optimizeForOpus && !p->opusPreview,
+                  "Profil 1 vollstaendig");
+        } else {
+            CHECK(false, "Profil 1 fehlt");
+        }
+        if (const Profile* p = u.profiles.Find(L"Zocken")) CHECK(p->targetExe == L"chrome.exe" && p->eqBands == 10 && p->eqGains.size() == 10 && p->eqGains[3] == 2.0f, "Profil 2");
+        else CHECK(false, "Profil 2 fehlt");
+        CHECK(u.soundVolPct == 150 && u.sounds[0].path == L"C:\\Sounds\\airhorn.wav" && u.sounds[0].name == L"Hupe" && u.sounds[7].path == L"D:\\Töne\\Ärger.mp3" &&
+                  u.sounds[7].name == L"Ärger" && u.sounds[3].path.empty(), "Soundboard-Slots");
+        CHECK(!u.nowPlayingChat && u.nowPlayingChannel && u.nowPlayingMeta && u.language == 2, "Now-Playing und Sprache");
+
+        // Standardwerte einer leeren INI
+        const Settings d = LoadSettings(ini + L".gibtsnicht");
+        CHECK(d.nowPlayingChat && !d.nowPlayingChannel && !d.nowPlayingMeta && d.language == 0 && d.soundVolPct == 100 && d.profiles.items.empty(), "Standardwerte");
+
+        // Obergrenze der Profile
+        profiles::ProfileBook many;
+        for (size_t i = 0; i < profiles::kMaxProfiles; ++i) many.Save(L"P" + std::to_wstring(i), a);
+        CHECK(many.items.size() == profiles::kMaxProfiles && many.Save(L"Zu viel", a) == PresetResult::Full, "maximal %zu Profile", profiles::kMaxProfiles);
+
+        // Geloeschtes Profil verschwindet auch aus der Datei
+        t.profiles.Delete(L"Zocken");
+        SaveSettings(ini, t);
+        CHECK(LoadSettings(ini).profiles.items.size() == 1, "nach Loeschen");
+    }
+
     DeleteFileW(ini.c_str());
     std::printf(g_fail ? "%d FEHLER\n" : "settings_test: alle Tests ok\n", g_fail);
     return g_fail ? 1 : 0;

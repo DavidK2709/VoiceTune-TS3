@@ -9,6 +9,7 @@
 
 #include "app_discovery.h"
 #include "mixer.h"
+#include "nowplaying.h"
 
 namespace {
 constexpr int     kAudiblePeak    = 8;     // Quellpegel (vor Lautstaerke) ab dem die Musik als hoerbar gilt
@@ -46,6 +47,10 @@ void Engine::Init(const std::wstring& configDir)
     mono_       = settings_.mono;
     gateDb_     = static_cast<float>(settings_.gateDb);
     musicMode_  = settings_.musicMode;
+    i18n::SetSetting(settings_.language);
+    soundGain_  = settings_.soundVolPct / 100.0f;
+    for (int i = 0; i < kSoundSlots; ++i)
+        if (!settings_.sounds[i].path.empty()) sounds_.Load(i, settings_.sounds[i].path);
     optimize_   = settings_.optimizeForOpus;
     opusPreviewOn_ = settings_.opusPreview;
     settings_.eqGains.resize(settings_.eqBands, 0.0f);
@@ -60,6 +65,7 @@ void Engine::Init(const std::wstring& configDir)
     monitorReader_.Reset();
     status_     = settings_.enabled ? L"Warte auf App..." : L"Aus";
 
+    sounds_.Start(); // nach einem Shutdown wieder bereit (Plugin deaktiviert und wieder aktiviert)
     quit_    = false;
     wake_    = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     watcher_ = std::thread(&Engine::WatcherMain, this);
@@ -70,6 +76,7 @@ void Engine::Shutdown()
     quit_ = true;
     if (wake_) SetEvent(wake_);
     if (watcher_.joinable()) watcher_.join();
+    sounds_.Stop(); // Lade-Thread des Soundboards (muss vor dem Entladen der DLL weg sein)
     std::atomic_store(&opus_, std::shared_ptr<OpusPreview>());
     if (engagedMask_.exchange(0) && preCb_) preCb_(lastSchid_.load(), 0); // TS3-Einstellungen des Nutzers wiederherstellen
     gateOn_ = false;
@@ -206,6 +213,92 @@ void Engine::ApplyUserPreset(const std::wstring& name)
     settings_.eqPresetName = p->name;
     ++eqVersion_;
     SaveLocked();
+}
+
+PresetResult Engine::SaveProfile(const std::wstring& name)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    const PresetResult r = settings_.profiles.Save(name, ProfileFromSettings(settings_));
+    if (r == PresetResult::Ok || r == PresetResult::Updated) {
+        settings_.profileName = presets::Sanitize(name);
+        SaveLocked();
+    }
+    return r;
+}
+
+PresetResult Engine::RenameProfile(const std::wstring& from, const std::wstring& to)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    const PresetResult r = settings_.profiles.Rename(from, to);
+    if (r == PresetResult::Ok) {
+        if (presets::EqualNoCase(settings_.profileName, from)) settings_.profileName = presets::Sanitize(to);
+        SaveLocked();
+    }
+    return r;
+}
+
+bool Engine::DeleteProfile(const std::wstring& name)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    const bool ok = settings_.profiles.Delete(name);
+    if (ok) {
+        if (presets::EqualNoCase(settings_.profileName, name)) settings_.profileName.clear();
+        SaveLocked();
+    }
+    return ok;
+}
+
+// Setzt alle Werte des Profils ueber die normalen Setter (wirken sofort im Audio-Thread); Stumm, Ein/Aus und Musikmodus bleiben unberuehrt.
+bool Engine::ApplyProfile(const std::wstring& name)
+{
+    Profile p;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        const Profile* f = settings_.profiles.Find(name);
+        if (!f) return false;
+        p = *f;
+    }
+    SetTarget(p.targetExe);
+    SetMusicVolume(p.musicVolPct);
+    SetMicVolume(p.micVolPct);
+    SetMonitorDelay(p.monitorDelayMs);
+    SetMonitor(p.monitor);
+    SetEqBands(p.eqBands);
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        p.eqGains.resize(settings_.eqBands, 0.0f);
+        settings_.eqGains      = p.eqGains;
+        settings_.eqPresetName = p.eqPresetName;
+        settings_.eqEnabled    = p.eqEnabled;
+        ++eqVersion_;
+        dirty_ = true;
+    }
+    SetQuality(p.quality);
+    SetMono(p.mono);
+    SetOptimizeForOpus(p.optimizeForOpus);
+    SetOpusPreview(p.opusPreview);
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.profileName = p.name;
+    SaveLocked();
+    return true;
+}
+
+std::vector<std::wstring> Engine::ProfileNames()
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    std::vector<std::wstring>   names;
+    for (const auto& p : settings_.profiles.items) names.push_back(p.name);
+    return names;
+}
+
+bool Engine::ApplyNextProfile()
+{
+    std::wstring next;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        next = settings_.profiles.NextAfter(settings_.profileName);
+    }
+    return !next.empty() && ApplyProfile(next);
 }
 
 void Engine::SetQuality(int q)
@@ -428,6 +521,7 @@ void Engine::WatcherMain()
         }
 
         UpdateCodec();
+        UpdateNowPlaying();
         HandlePlayerEvents();
         UpdateStats();
         if (dirty_.exchange(false)) {
@@ -475,6 +569,74 @@ void Engine::UpdateOpus()
     }
     std::lock_guard<std::mutex> lk(mutex_);
     opusInfo_ = text;
+}
+
+void Engine::SetLanguage(int setting)
+{
+    setting = std::min(2, std::max(0, setting));
+    i18n::SetSetting(setting);
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.language = setting;
+    SaveLocked();
+}
+
+void Engine::SetNowPlayingChat(bool on)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.nowPlayingChat = on;
+    dirty_                   = true;
+}
+
+void Engine::SetNowPlayingChannel(bool on)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.nowPlayingChannel = on;
+    dirty_                      = true;
+}
+
+void Engine::SetNowPlayingMeta(bool on)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.nowPlayingMeta = on;
+    dirty_                   = true;
+}
+
+// Watcher: erkennt Titelwechsel der laufenden Quelle (Datei oder App) und meldet sie dem Plugin. Gleicher Titel wird nicht doppelt gemeldet;
+// nach "Musik aus" (oder aus allen Zielen abgeschaltet) beginnt es von vorn.
+void Engine::UpdateNowPlaying()
+{
+    if (!nowPlayingCb_) return;
+    const Settings s      = GetSettings();
+    const bool     wanted = s.enabled && (s.nowPlayingChat || s.nowPlayingChannel || s.nowPlayingMeta);
+    if (!wanted) {
+        npCand_.clear();
+        if (!npLast_.empty()) {
+            npLast_.clear();
+            nowPlayingCb_(L""); // z.B. Client-Metadaten wieder zuruecksetzen
+        }
+        return;
+    }
+    const ULONGLONG now = GetTickCount64();
+    if (now - npTick_ < 1000) return;
+    npTick_ = now;
+
+    std::wstring title;
+    if (fileActive_.load()) {
+        std::lock_guard<std::mutex> lk(playerMutex_);
+        if (player_ && !playerPaused_ && playlist_.current >= 0 && playlist_.current < static_cast<int>(playlist_.items.size())) title = playlist_.items[playlist_.current].title;
+    } else if (capturing_.load() && !s.targetExe.empty()) {
+        const auto  apps = DiscoverApps();
+        const auto* app  = FindByExe(apps, s.targetExe);
+        if (app && app->playing) title = nowplaying::CleanTrackTitle(app->title, s.targetExe);
+    }
+    if (title != npCand_) {
+        npCand_  = title;
+        npSince_ = now;
+    }
+    if (!title.empty() && title != npLast_ && now - npSince_ >= 3000) {
+        npLast_ = title;
+        nowPlayingCb_(title);
+    }
 }
 
 std::wstring Engine::OpusInfo()
@@ -619,21 +781,25 @@ void Engine::Mix(uint64_t schid, short* samples, int frames, int channels, int* 
         *edited |= 1;
     }
     const bool fileSrc = fileActive_.load(std::memory_order_relaxed) && enabledA_.load(std::memory_order_relaxed);
-    if (!capturing_.load() && !fileSrc) return;
-    if (resetRequested_.exchange(false)) {
-        reader_.Reset();
-        holdFrames_ = 0;
-        analysis_.Clear();
-    }
-    if (fileResetRequested_.exchange(false)) {
-        fileReader_.Reset();
-        holdFrames_ = 0;
-    }
-    if (fileSrc != usingFile_) { // Quellenwechsel App <-> Datei: sauber neu puffern, alte App-Daten verwerfen
-        usingFile_ = fileSrc;
-        (fileSrc ? fileReader_ : reader_).Reset();
-        if (!fileSrc) ring_.Clear();
-        holdFrames_ = 0;
+    const bool srcOn  = capturing_.load() || fileSrc;       // App oder Datei liefert Musik
+    const bool voices = sounds_.Active();                    // Soundboard-Clip laeuft oder wurde gerade ausgeloest
+    if (!srcOn && !voices) return;
+    if (srcOn) {
+        if (resetRequested_.exchange(false)) {
+            reader_.Reset();
+            holdFrames_ = 0;
+            analysis_.Clear();
+        }
+        if (fileResetRequested_.exchange(false)) {
+            fileReader_.Reset();
+            holdFrames_ = 0;
+        }
+        if (fileSrc != usingFile_) { // Quellenwechsel App <-> Datei: sauber neu puffern, alte App-Daten verwerfen
+            usingFile_ = fileSrc;
+            (fileSrc ? fileReader_ : reader_).Reset();
+            if (!fileSrc) ring_.Clear();
+            holdFrames_ = 0;
+        }
     }
     JitterReader& rd = fileSrc ? fileReader_ : reader_;
     callbacks_.fetch_add(1, std::memory_order_relaxed);
@@ -643,20 +809,13 @@ void Engine::Mix(uint64_t schid, short* samples, int frames, int channels, int* 
     const size_t need = static_cast<size_t>(frames) * 2;
     if (scratch_.size() < need) scratch_.resize(need);
     if (gained_.size() < need) gained_.resize(need);
-    const bool music = rd.Read(scratch_.data(), frames);
+    const bool music = srcOn && rd.Read(scratch_.data(), frames);
 
     // Sende-Bit nachhalten: sobald die Quelle hoerbar ist, 600 ms lang "senden", unabhaengig vom Pegel einzelner Bloecke.
     int srcL = 0, srcR = 0;
     if (music) mixer::PeakStereo(scratch_.data(), frames, &srcL, &srcR);
     if (std::max(srcL, srcR) > kAudiblePeak) holdFrames_ = kSendHoldFrames;
     else holdFrames_ = std::max<int64_t>(0, holdFrames_ - frames);
-    const bool sendBit = alwaysSend_.load() && holdFrames_ > 0;
-    if (music) { // Diagnose: wie oft gibt TS3 den Block zum Senden frei?
-        musicBlocks_.fetch_add(1, std::memory_order_relaxed);
-        if (tsSends) openBlocks_.fetch_add(1, std::memory_order_relaxed);
-        const float e = sendEma_.load(std::memory_order_relaxed);
-        sendEma_.store(e + ((tsSends ? 1.0f : 0.0f) - e) * 0.05f, std::memory_order_relaxed);
-    }
 
     // Musikblock aufbereiten: Mono -> EQ -> Lautstaerke. `gained_` ist genau das, was ins Mikrofon (und ins Mithoeren) geht.
     const float musicGain = musicGain_.load();
@@ -665,17 +824,27 @@ void Engine::Mix(uint64_t schid, short* samples, int frames, int channels, int* 
             for (int i = 0; i < frames; ++i) scratch_[2 * i] = scratch_[2 * i + 1] = static_cast<int16_t>((scratch_[2 * i] + scratch_[2 * i + 1]) / 2);
         equalizer_.Process(scratch_.data(), frames);
         for (size_t i = 0; i < need; ++i) gained_[i] = mixer::SoftClip(scratch_[i] * musicGain);
-        if (optimize_.load(std::memory_order_relaxed)) {
-            // Mono, wenn das Mikrofon mono ist, "Mono" gewaehlt wurde oder der Kanal Opus Voice nutzt (TS3 mischt dann ohnehin zu Mono)
-            optimizer_.Process(gained_.data(), frames, channels == 1 || mono_.load(std::memory_order_relaxed) || codecVoice_.load(std::memory_order_relaxed));
-            optimizerActive_ = true;
-        }
     } else {
         std::fill(gained_.begin(), gained_.begin() + static_cast<std::ptrdiff_t>(need), static_cast<int16_t>(0));
-        if (optimizerActive_) { // Pause: Filterzustand verwerfen, sonst knackt der Hochpass beim Wiedereinsatz
-            optimizer_       = VoiceOptimizer();
-            optimizerActive_ = false;
-        }
+    }
+    // Soundboard: laufende Clips kommen ueber die Musik (nach EQ und Musik-Lautstaerke, vor Optimierer/Begrenzer, mit eigener Lautstaerke)
+    const bool mixedVoices = voices && sounds_.Mix(gained_.data(), frames, soundGain_.load(std::memory_order_relaxed));
+    if (mixedVoices) holdFrames_ = kSendHoldFrames;
+    const bool audio    = music || mixedVoices;
+    const bool sendBit  = alwaysSend_.load() && holdFrames_ > 0;
+    if (audio) { // Diagnose: wie oft gibt TS3 den Block zum Senden frei?
+        musicBlocks_.fetch_add(1, std::memory_order_relaxed);
+        if (tsSends) openBlocks_.fetch_add(1, std::memory_order_relaxed);
+        const float e = sendEma_.load(std::memory_order_relaxed);
+        sendEma_.store(e + ((tsSends ? 1.0f : 0.0f) - e) * 0.05f, std::memory_order_relaxed);
+    }
+    if (audio && optimize_.load(std::memory_order_relaxed)) {
+        // Mono, wenn das Mikrofon mono ist, "Mono" gewaehlt wurde oder der Kanal Opus Voice nutzt (TS3 mischt dann ohnehin zu Mono)
+        optimizer_.Process(gained_.data(), frames, channels == 1 || mono_.load(std::memory_order_relaxed) || codecVoice_.load(std::memory_order_relaxed));
+        optimizerActive_ = true;
+    } else if (!audio && optimizerActive_) { // Pause: Filterzustand verwerfen, sonst knackt der Hochpass beim Wiedereinsatz
+        optimizer_       = VoiceOptimizer();
+        optimizerActive_ = false;
     }
     int outL = 0, outR = 0;
     mixer::PeakStereo(gained_.data(), frames, &outL, &outR);
@@ -699,9 +868,9 @@ void Engine::Mix(uint64_t schid, short* samples, int frames, int channels, int* 
     }
 
     const float micGain = micGain_.load();
-    if (music || micGain != 1.0f)
-        mixer::MixInto(reinterpret_cast<int16_t*>(samples), frames, channels, music ? gained_.data() : nullptr, music ? frames : 0, micGain, 1.0f);
-    if (music || micGain != 1.0f) *edited |= 1;
+    if (audio || micGain != 1.0f)
+        mixer::MixInto(reinterpret_cast<int16_t*>(samples), frames, channels, audio ? gained_.data() : nullptr, audio ? frames : 0, micGain, 1.0f);
+    if (audio || micGain != 1.0f) *edited |= 1;
     if (sendBit) *edited |= 3;
 }
 
@@ -709,6 +878,71 @@ void Engine::Mix(uint64_t schid, short* samples, int frames, int channels, int* 
 // =============================================================================================================================================
 // Datei-Player
 // =============================================================================================================================================
+
+// ---- Soundboard ---------------------------------------------------------------------------------------------------------------------------
+
+namespace {
+std::wstring FileTitle(const std::wstring& path)
+{
+    const size_t slash = path.find_last_of(L"\\/");
+    std::wstring name  = slash == std::wstring::npos ? path : path.substr(slash + 1);
+    const size_t dot   = name.find_last_of(L'.');
+    if (dot != std::wstring::npos && dot > 0) name.resize(dot);
+    return presets::Sanitize(name);
+}
+} // namespace
+
+void Engine::SoundSetSlot(int slot, const std::wstring& path)
+{
+    if (slot < 0 || slot >= kSoundSlots) return;
+    sounds_.Load(slot, path);
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.sounds[slot].path = path;
+    settings_.sounds[slot].name = path.empty() ? L"" : FileTitle(path);
+    SaveLocked();
+}
+
+void Engine::SoundRename(int slot, const std::wstring& name)
+{
+    if (slot < 0 || slot >= kSoundSlots) return;
+    std::lock_guard<std::mutex> lk(mutex_);
+    if (settings_.sounds[slot].path.empty()) return;
+    const std::wstring n = presets::Sanitize(name);
+    settings_.sounds[slot].name = n.empty() ? FileTitle(settings_.sounds[slot].path) : n;
+    SaveLocked();
+}
+
+void Engine::SoundPlay(int slot)
+{
+    if (slot < 0 || slot >= kSoundSlots || sounds_.GetState(slot) != Soundboard::State::Ready) return;
+    EnsureEnabled();
+    sounds_.Play(slot);
+    if (wake_) SetEvent(wake_);
+}
+
+void Engine::SoundStop() { sounds_.StopAll(); }
+
+void Engine::SetSoundVolume(int pct)
+{
+    pct         = std::min(200, std::max(0, pct));
+    soundGain_  = pct / 100.0f;
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.soundVolPct = pct;
+    dirty_                = true;
+}
+
+std::vector<Engine::SoundInfo> Engine::GetSounds()
+{
+    std::vector<SoundInfo> out(kSoundSlots);
+    std::lock_guard<std::mutex> lk(mutex_);
+    for (int i = 0; i < kSoundSlots; ++i) {
+        out[i].name    = settings_.sounds[i].name;
+        out[i].path    = settings_.sounds[i].path;
+        out[i].state   = sounds_.GetState(i);
+        out[i].seconds = sounds_.Seconds(i);
+    }
+    return out;
+}
 
 void Engine::EnsureEnabled()
 {
@@ -967,8 +1201,8 @@ std::wstring Engine::SourceLabel()
 {
     if (fileActive_.load()) {
         std::lock_guard<std::mutex> lk(playerMutex_);
-        if (playlist_.current >= 0 && playlist_.current < static_cast<int>(playlist_.items.size())) return L"Datei: " + playlist_.items[playlist_.current].title;
+        if (playlist_.current >= 0 && playlist_.current < static_cast<int>(playlist_.items.size())) return std::wstring(Tr(L"Datei: ")) + playlist_.items[playlist_.current].title;
     }
     const std::wstring exe = GetSettings().targetExe;
-    return exe.empty() ? std::wstring(L"keine App gewählt") : PrettyExeName(exe);
+    return exe.empty() ? std::wstring(Tr(L"keine App gewählt")) : PrettyExeName(exe);
 }

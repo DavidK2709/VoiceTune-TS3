@@ -26,7 +26,8 @@ endif()
 set(CORE_SOURCES
     src/app_discovery.cpp
     src/process_capture.cpp
-    src/file_player.cpp)
+    src/file_player.cpp
+    src/i18n.cpp)
 
 # --- TeamSpeak-Plugin -------------------------------------------------------
 add_library(VoiceTune SHARED
@@ -35,6 +36,8 @@ add_library(VoiceTune SHARED
     src/opus_preview.cpp
     src/settings.cpp
     src/config_dialog.cpp
+    src/soundboard.cpp
+    src/commands.cpp
     src/remote.cpp
     src/voicetune.rc
     src/plugin.cpp)
@@ -69,8 +72,13 @@ add_executable(player_test tools/player_test.cpp src/file_player.cpp)
 target_include_directories(player_test PRIVATE src)
 target_link_libraries(player_test PRIVATE ole32 uuid mfuuid -static -static-libgcc -static-libstdc++)
 
+# --- Soundboard (Clips dekodieren, Stimmen mischen) ----------------------------------------
+add_executable(soundboard_test tools/soundboard_test.cpp src/soundboard.cpp src/file_player.cpp)
+target_include_directories(soundboard_test PRIVATE src)
+target_link_libraries(soundboard_test PRIVATE ole32 uuid mfuuid -static -static-libgcc -static-libstdc++)
+
 # --- Engine + Datei-Player ohne Fenster ----------------------------------------------------
-add_executable(engine_files_test tools/engine_files_test.cpp src/engine.cpp src/opus_preview.cpp src/settings.cpp ${CORE_SOURCES})
+add_executable(engine_files_test tools/engine_files_test.cpp src/engine.cpp src/soundboard.cpp src/opus_preview.cpp src/settings.cpp ${CORE_SOURCES})
 target_include_directories(engine_files_test PRIVATE src)
 target_link_libraries(engine_files_test PRIVATE ole32 oleaut32 uuid user32 winmm mfuuid ${OPUS_LIB} -static -static-libgcc -static-libstdc++)
 
@@ -91,3 +99,17 @@ target_include_directories(jitter_test PRIVATE src)
 add_executable(ts3_host_test tools/ts3_host_test.cpp)
 target_include_directories(ts3_host_test PRIVATE third_party/ts3sdk)
 target_link_libraries(ts3_host_test PRIVATE winmm gdi32 user32 -static -static-libgcc -static-libstdc++)
+
+# --- Now-Playing: Titelbereinigung -------------------------------------------------------
+add_executable(nowplaying_test tools/nowplaying_test.cpp)
+target_include_directories(nowplaying_test PRIVATE src)
+
+# --- Gemeinsame Befehle (Hotkeys, Stream-Deck-API) ------------------------------------------
+add_executable(commands_test tools/commands_test.cpp src/commands.cpp src/engine.cpp src/soundboard.cpp src/opus_preview.cpp src/settings.cpp ${CORE_SOURCES})
+target_include_directories(commands_test PRIVATE src)
+target_link_libraries(commands_test PRIVATE ole32 oleaut32 uuid user32 winmm mfuuid ${OPUS_LIB} -static -static-libgcc -static-libstdc++)
+
+# --- Uebersetzungstabelle (Deutsch/English) -------------------------------------------------
+add_executable(i18n_test tools/i18n_test.cpp src/i18n.cpp)
+target_include_directories(i18n_test PRIVATE src)
+target_link_libraries(i18n_test PRIVATE -static -static-libgcc -static-libstdc++)

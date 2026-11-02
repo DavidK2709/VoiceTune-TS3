@@ -150,6 +150,29 @@ int main(int argc, char** argv)
             if (icon) freeMem(icon);
         }
     }
+    // Hotkeys: Liste wie TS3 abfragen, Ereignisse ausloesen (micmute zweimal -> Chat-Zeilen, sound1 bei leerem Slot und ein unbekanntes Schluesselwort schaden nicht)
+    {
+        auto hot   = Sym<void (*)(PluginHotkey***)>(m, "ts3plugin_initHotkeys");
+        auto onHot = Sym<void (*)(const char*)>(m, "ts3plugin_onHotkeyEvent");
+        if (hot) {
+            PluginHotkey** hk = nullptr;
+            hot(&hk);
+            int n = 0;
+            for (; hk && hk[n]; ++n) std::printf("  hotkey %-14s %s\n", hk[n]->keyword, hk[n]->description);
+            std::printf("%d Hotkeys\n", n);
+            if (freeMem) {
+                for (int i = 0; i < n; ++i) freeMem(hk[i]);
+                freeMem(hk);
+            }
+        }
+        if (onHot) {
+            onHot("micmute");
+            onHot("micmute");
+            onHot("sound1");
+            onHot("gibtsnicht");
+            onHot(nullptr);
+        }
+    }
     short buf[960] = {};
     int   edited   = 0;
     if (edit) edit(1, buf, 960, 1, &edited);
@@ -234,7 +257,7 @@ int main(int argc, char** argv)
         };
         // Das Testfenster erscheint auf dem Bildschirm des Nutzers: fuer echte Mausklicks/Tasten sperren, damit nur die simulierten Nachrichten wirken.
         for (int i = 0; i < 60 && !findWindow(); ++i) Sleep(50);
-        if (found.hwnd) EnableWindow(found.hwnd, FALSE);
+        if (found.hwnd && !std::getenv("AAM_LIVE")) EnableWindow(found.hwnd, FALSE); // AAM_LIVE=<Sekunden>: Fenster bedienbar lassen (zum Ausprobieren)
         Sleep(5500);
         findWindow();
         if (HWND w = found.hwnd) {
@@ -336,6 +359,122 @@ int main(int argc, char** argv)
                 return 0;
             }
 
+            // Zum Ausprobieren: Fenster N Sekunden offen und bedienbar lassen (AAM_LIVE=45), danach beenden
+            if (const char* live = std::getenv("AAM_LIVE")) {
+                std::printf("Fenster offen fuer %s s\n", live);
+                Sleep(static_cast<DWORD>(std::atoi(live)) * 1000);
+                micStop = true;
+                micThread.join();
+                timeEndPeriod(1);
+                shut();
+                return 0;
+            }
+
+            // Profile, Titel melden und Soundboard bedienen (AAM_UI3=<ordner mit tone.wav/tone.mp3>); Screenshots p*.bmp (Seite 0) und s*.bmp (Sounds)
+            if (const char* sdir = std::getenv("AAM_UI3")) {
+                auto click = [&](int x, int y) {
+                    SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(x, y));
+                    SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, y));
+                    SendMessageW(w, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+                };
+                auto rclick = [&](int x, int y) {
+                    SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(x, y));
+                    SendMessageW(w, WM_RBUTTONDOWN, MK_RBUTTON, MAKELPARAM(x, y));
+                    SendMessageW(w, WM_RBUTTONUP, 0, MAKELPARAM(x, y));
+                };
+                auto type  = [&](const wchar_t* text) { for (; *text; ++text) SendMessageW(w, WM_CHAR, *text, 0); };
+                auto enter = [&] { SendMessageW(w, WM_CHAR, 13, 0); };
+                auto drop  = [&](const std::vector<std::wstring>& paths, int px, int py) {
+                    std::vector<wchar_t> list;
+                    for (const auto& pth : paths) {
+                        list.insert(list.end(), pth.begin(), pth.end());
+                        list.push_back(L'\0');
+                    }
+                    list.push_back(L'\0');
+                    HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, sizeof(DropFilesHeader) + list.size() * sizeof(wchar_t));
+                    auto*   df  = static_cast<DropFilesHeader*>(GlobalLock(mem));
+                    df->pFiles  = sizeof(DropFilesHeader);
+                    df->pt.x    = px;
+                    df->pt.y    = py;
+                    df->fWide   = TRUE;
+                    std::memcpy(reinterpret_cast<char*>(df) + sizeof(DropFilesHeader), list.data(), list.size() * sizeof(wchar_t));
+                    GlobalUnlock(mem);
+                    SendMessageW(w, WM_DROPFILES, reinterpret_cast<WPARAM>(mem), 0);
+                };
+                const std::string  base = argv[3];
+                const std::wstring d    = std::wstring(sdir, sdir + std::strlen(sdir));
+                // Seite 0: Profil speichern (Namenseingabe), Wert aendern -> "(geaendert)", Titel melden einschalten
+                click(502, 750);                         // "Speichern als ..."
+                type(L"Abend");
+                Sleep(400);
+                shoot(base + "p1.bmp");                  // Eingabe offen
+                enter();
+                Sleep(400);
+                shoot(base + "p2.bmp");                  // gespeichert, Meldung in der Fusszeile
+                click(125, 595);                         // Musik-Lautstaerke aendern
+                click(160, 760 - 0);                     // (kein Ziel; Fokus)
+                Sleep(400);
+                click(764, 718);                         // zweite Zeile "Titel melden": Kanal-Chat (Warnfarbe)
+                Sleep(500);
+                shoot(base + "p3.bmp");
+                click(764, 718);                         // wieder aus
+                // Seite Sounds
+                click(615, 106);
+                drop({d + L"\\tone.wav", d + L"\\tone.mp3"}, 0, 0);
+                Sleep(1800);
+                shoot(base + "s1.bmp");                  // zwei Kacheln belegt
+                click(122, 291);                         // Kachel 1 spielen
+                Sleep(150);
+                shoot(base + "s2.bmp");                  // Aufleuchten
+                rclick(314, 291);                        // Menue an Kachel 2
+                SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(330, 313));
+                shoot(base + "s3.bmp");
+                click(330, 313);                         // "Umbenennen"
+                type(L"Hupe laut");
+                Sleep(300);
+                shoot(base + "s4.bmp");                  // Namenseingabe
+                enter();
+                Sleep(400);
+                shoot(base + "s5.bmp");
+                click(101, 106);                         // zurueck auf Seite 0
+                Sleep(400);
+                shoot(base + "p4.bmp");
+                if (const char* hold = std::getenv("AAM_HOLD")) Sleep(static_cast<DWORD>(std::atoi(hold)) * 1000);
+                micStop = true;
+                micThread.join();
+                timeEndPeriod(1);
+                shut();
+                return 0;
+            }
+
+            // Auf English umschalten und alle vier Seiten fotografieren (AAM_EN=1); en0..en3.bmp
+            if (std::getenv("AAM_EN")) {
+                auto click = [&](int x, int y) {
+                    SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(x, y));
+                    SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, y));
+                    SendMessageW(w, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+                };
+                click(674, 48); // EN
+                Sleep(2600);    // Statusanzeigen der Engine aktualisieren sich im Sekundentakt
+                shoot(std::string(argv[3]) + "en0.bmp");
+                click(279, 106);
+                Sleep(2600);
+                shoot(std::string(argv[3]) + "en1.bmp");
+                click(477, 106);
+                Sleep(500);
+                shoot(std::string(argv[3]) + "en2.bmp");
+                click(615, 106);
+                Sleep(500);
+                shoot(std::string(argv[3]) + "en3.bmp");
+                if (const char* hold = std::getenv("AAM_HOLD")) Sleep(static_cast<DWORD>(std::atoi(hold)) * 1000);
+                click(46, 48);  // zurueck auf Deutsch (die Einstellung landet nur in %TEMP%)
+                micStop = true;
+                micThread.join();
+                timeEndPeriod(1);
+                shut();
+                return 0;
+            }
+
             // Nur "neue Elemente": Stumm-Knopf der Mikrofon-Lautstaerke, Opus-Zeile der Qualitaets-Karte (Kopfzeile mit App-Icon ist schon auf dem ersten Bild)
             if (std::getenv("AAM_NEW")) {
                 auto click = [&](int x, int y) {
@@ -357,6 +496,7 @@ int main(int argc, char** argv)
                 click(440, 722);                         // "Vorschau wie Opus" aus
                 Sleep(1500);
                 shoot(std::string(argv[3]) + "n4.bmp");
+                if (const char* hold = std::getenv("AAM_HOLD")) Sleep(static_cast<DWORD>(std::atoi(hold)) * 1000); // Fenster fuer den Nutzer eine Weile offen lassen
                 micStop = true;
                 micThread.join();
                 timeEndPeriod(1);

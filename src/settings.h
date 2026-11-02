@@ -3,6 +3,14 @@
 #include <vector>
 
 #include "presets.h"
+#include "profiles.h"
+
+// Soundboard: kurze Clips (Jingles), per Hotkey/Fenster/Stream Deck ueber der Musik abspielbar
+constexpr int kSoundSlots = 8;
+struct SoundSlot {
+    std::wstring path; // leer = Slot frei
+    std::wstring name; // Anzeigename (Standard: Dateiname ohne Endung)
+};
 
 struct Settings {
     bool         enabled     = false; // Musik einspielen
@@ -36,7 +44,52 @@ struct Settings {
     // Qualitaet (plugin-intern): 0 = niedrige Latenz, 1 = ausgewogen, 2 = stabil; Mono mischt die Musik als Mono ein
     int  quality = 1;
     bool mono    = false;
+
+    // Profile / Szenen (benannte Schnappschuesse der Einstellungen) und das zuletzt gewaehlte
+    profiles::ProfileBook profiles;
+    std::wstring          profileName;
+
+    // Soundboard
+    SoundSlot sounds[kSoundSlots];
+    int       soundVolPct = 100; // 0..200
+
+    // Now-Playing: Titelwechsel im eigenen Chat melden (Standard), optional im Kanal-Chat (erreicht andere!) oder in den Client-Metadaten
+    bool nowPlayingChat    = true;
+    bool nowPlayingChannel = false;
+    bool nowPlayingMeta    = false;
+
+    // Oberflaechensprache: 0 = automatisch (nach Windows), 1 = Deutsch, 2 = English
+    int language = 0;
 };
+
+// Schnappschuss der aktuellen Einstellungen als Profil (Name leer, wird beim Speichern gesetzt)
+inline Profile ProfileFromSettings(const Settings& s)
+{
+    Profile p;
+    p.targetExe       = s.targetExe;
+    p.musicVolPct     = s.musicVolPct;
+    p.micVolPct       = s.micVolPct;
+    p.monitor         = s.monitor;
+    p.monitorDelayMs  = s.monitorDelayMs;
+    p.eqEnabled       = s.eqEnabled;
+    p.eqBands         = s.eqBands;
+    p.eqGains         = s.eqGains;
+    p.eqGains.resize(s.eqBands, 0.0f);
+    p.eqPresetName    = s.eqPresetName;
+    p.quality         = s.quality;
+    p.mono            = s.mono;
+    p.optimizeForOpus = s.optimizeForOpus;
+    p.opusPreview     = s.opusPreview;
+    return p;
+}
+
+// Gleiche Einstellungen? (Name und Preset-Name zaehlen nicht, EQ-Kurve mit 0,05 dB Toleranz). Fuer die Anzeige "(geaendert)".
+inline bool SameProfile(const Profile& a, const Profile& b)
+{
+    return a.targetExe == b.targetExe && a.musicVolPct == b.musicVolPct && a.micVolPct == b.micVolPct && a.monitor == b.monitor && a.monitorDelayMs == b.monitorDelayMs &&
+           a.eqEnabled == b.eqEnabled && a.eqBands == b.eqBands && presets::CurvesMatch(a.eqGains, b.eqGains, 0.05f) && a.quality == b.quality && a.mono == b.mono &&
+           a.optimizeForOpus == b.optimizeForOpus && a.opusPreview == b.opusPreview;
+}
 
 // section: Abschnittsname der INI ("VoiceTune"; die Vorgaengerversion nutzte "AppAudioMixer")
 Settings LoadSettings(const std::wstring& iniPath, const wchar_t* section = L"VoiceTune");

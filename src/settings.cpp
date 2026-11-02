@@ -93,6 +93,55 @@ Settings LoadSettings(const std::wstring& iniPath, const wchar_t* section)
         swprintf(key, 32, L"Gains%d", i);
         s.userPresets.Save(name, bands, ParseGains(gainsText(p, L"Presets", key), bands));
     }
+
+    // Profile: [Profiles] Count, Name1/Exe1/MusicVol1/..., plus das gewaehlte in [VoiceTune] Profile
+    {
+        wchar_t cur[128] = {};
+        GetPrivateProfileStringW(section, L"Profile", L"", cur, 128, p);
+        s.profileName = cur;
+        const int n = std::min<int>(static_cast<int>(profiles::kMaxProfiles), std::max<int>(0, GetPrivateProfileIntW(L"Profiles", L"Count", 0, p)));
+        for (int i = 1; i <= n; ++i) {
+            auto key = [i](const wchar_t* base) { return std::wstring(base) + std::to_wstring(i); };
+            auto str = [&](const wchar_t* base) {
+                wchar_t buf[260] = {};
+                GetPrivateProfileStringW(L"Profiles", key(base).c_str(), L"", buf, 260, p);
+                return std::wstring(buf);
+            };
+            auto num = [&](const wchar_t* base, int def) { return static_cast<int>(GetPrivateProfileIntW(L"Profiles", key(base).c_str(), def, p)); };
+            Profile pr;
+            pr.targetExe      = str(L"Exe");
+            pr.musicVolPct    = Clamp200(num(L"MusicVol", 100));
+            pr.micVolPct      = Clamp200(num(L"MicVol", 100));
+            pr.monitor        = num(L"Monitor", 0) != 0;
+            pr.monitorDelayMs = std::min(2000, std::max(0, num(L"Delay", 250)));
+            pr.eqEnabled      = num(L"EqOn", 1) != 0;
+            pr.eqBands        = ValidBands(num(L"Bands", 31)) ? num(L"Bands", 31) : 31;
+            pr.eqGains        = ParseGains(str(L"Gains"), pr.eqBands);
+            pr.eqPresetName   = str(L"EqPreset");
+            pr.quality        = std::min(2, std::max(0, num(L"Quality", 1)));
+            pr.mono           = num(L"Mono", 0) != 0;
+            pr.optimizeForOpus = num(L"Optimize", 1) != 0;
+            pr.opusPreview    = num(L"Opus", 1) != 0;
+            s.profiles.Save(str(L"Name"), pr);
+        }
+    }
+
+    // Soundboard
+    s.soundVolPct = Clamp200(GetPrivateProfileIntW(section, L"SoundVolume", s.soundVolPct, p));
+    for (int i = 0; i < kSoundSlots; ++i) {
+        wchar_t key[32], buf[520] = {};
+        swprintf(key, 32, L"SoundPath%d", i + 1);
+        GetPrivateProfileStringW(L"Sounds", key, L"", buf, 520, p);
+        s.sounds[i].path = buf;
+        swprintf(key, 32, L"SoundName%d", i + 1);
+        GetPrivateProfileStringW(L"Sounds", key, L"", buf, 520, p);
+        s.sounds[i].name = buf;
+    }
+
+    s.nowPlayingChat    = GetPrivateProfileIntW(section, L"NowPlayingChat", s.nowPlayingChat, p) != 0;
+    s.nowPlayingChannel = GetPrivateProfileIntW(section, L"NowPlayingChannel", s.nowPlayingChannel, p) != 0;
+    s.nowPlayingMeta    = GetPrivateProfileIntW(section, L"NowPlayingMeta", s.nowPlayingMeta, p) != 0;
+    s.language          = std::min(2, std::max(0, static_cast<int>(GetPrivateProfileIntW(section, L"Language", s.language, p))));
     return s;
 }
 
@@ -135,4 +184,42 @@ void SaveSettings(const std::wstring& iniPath, const Settings& s)
         swprintf(key, 32, L"Gains%zu", i + 1);
         WritePrivateProfileStringW(L"Presets", key, FormatGains(pr.gains).c_str(), p);
     }
+
+    WritePrivateProfileStringW(kSection, L"Profile", s.profileName.c_str(), p);
+    WritePrivateProfileStringW(L"Profiles", nullptr, nullptr, p);
+    WritePrivateProfileStringW(L"Profiles", L"Count", std::to_wstring(s.profiles.items.size()).c_str(), p);
+    for (size_t i = 0; i < s.profiles.items.size(); ++i) {
+        const Profile& pr  = s.profiles.items[i];
+        auto           put = [&](const wchar_t* base, const std::wstring& v) { WritePrivateProfileStringW(L"Profiles", (std::wstring(base) + std::to_wstring(i + 1)).c_str(), v.c_str(), p); };
+        put(L"Name", pr.name);
+        put(L"Exe", pr.targetExe);
+        put(L"MusicVol", std::to_wstring(pr.musicVolPct));
+        put(L"MicVol", std::to_wstring(pr.micVolPct));
+        put(L"Monitor", pr.monitor ? L"1" : L"0");
+        put(L"Delay", std::to_wstring(pr.monitorDelayMs));
+        put(L"EqOn", pr.eqEnabled ? L"1" : L"0");
+        put(L"Bands", std::to_wstring(pr.eqBands));
+        put(L"Gains", FormatGains(pr.eqGains));
+        put(L"EqPreset", pr.eqPresetName);
+        put(L"Quality", std::to_wstring(pr.quality));
+        put(L"Mono", pr.mono ? L"1" : L"0");
+        put(L"Optimize", pr.optimizeForOpus ? L"1" : L"0");
+        put(L"Opus", pr.opusPreview ? L"1" : L"0");
+    }
+
+    WritePrivateProfileStringW(kSection, L"SoundVolume", std::to_wstring(s.soundVolPct).c_str(), p);
+    WritePrivateProfileStringW(L"Sounds", nullptr, nullptr, p);
+    for (int i = 0; i < kSoundSlots; ++i) {
+        if (s.sounds[i].path.empty()) continue;
+        wchar_t key[32];
+        swprintf(key, 32, L"SoundPath%d", i + 1);
+        WritePrivateProfileStringW(L"Sounds", key, s.sounds[i].path.c_str(), p);
+        swprintf(key, 32, L"SoundName%d", i + 1);
+        WritePrivateProfileStringW(L"Sounds", key, s.sounds[i].name.c_str(), p);
+    }
+
+    WritePrivateProfileStringW(kSection, L"NowPlayingChat", s.nowPlayingChat ? L"1" : L"0", p);
+    WritePrivateProfileStringW(kSection, L"NowPlayingChannel", s.nowPlayingChannel ? L"1" : L"0", p);
+    WritePrivateProfileStringW(kSection, L"NowPlayingMeta", s.nowPlayingMeta ? L"1" : L"0", p);
+    WritePrivateProfileStringW(kSection, L"Language", std::to_wstring(s.language).c_str(), p);
 }

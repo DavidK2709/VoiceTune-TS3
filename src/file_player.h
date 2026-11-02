@@ -6,6 +6,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "ring_buffer.h"
 
@@ -38,6 +39,10 @@ public:
 
     // Laenge einer Datei in Sekunden (Media Foundation), -1 wenn nicht ermittelbar. Blockiert kurz; nicht aus dem UI-Thread fuer viele Dateien aufrufen.
     static double ProbeDuration(const std::wstring& path);
+
+    // Dekodiert eine (kurze) Datei komplett in den Speicher: 48 kHz / 16 bit / Stereo, interleaved; hoechstens `maxSeconds` (danach wird abgeschnitten).
+    // Blockiert bis zum Ende; nur aus einem Hintergrund-Thread aufrufen. false, wenn nichts dekodiert werden konnte.
+    static bool DecodeToMemory(const std::wstring& path, double maxSeconds, std::vector<int16_t>& out);
 
 private:
     enum class Result { Ended, Stopped, OpenFailed };

@@ -333,3 +333,74 @@ double FilePlayer::ProbeDuration(const std::wstring& path)
     if (SUCCEEDED(hrCom)) CoUninitialize();
     return d;
 }
+
+bool FilePlayer::DecodeToMemory(const std::wstring& path, double maxSeconds, std::vector<int16_t>& out)
+{
+    out.clear();
+    const size_t maxFrames = static_cast<size_t>(std::max(0.1, maxSeconds) * kRate);
+
+    const HRESULT hrCom = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (Mf().ok && SUCCEEDED(Mf().Startup(MF_VERSION, MFSTARTUP_LITE))) {
+        if (IMFSourceReader* reader = OpenReader(path)) {
+            while (out.size() / 2 < maxFrames) {
+                DWORD         flags  = 0;
+                IMFSample*    sample = nullptr;
+                const HRESULT hr     = reader->ReadSample(static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM), 0, nullptr, &flags, nullptr, &sample);
+                if (FAILED(hr)) break;
+                if (sample) {
+                    IMFMediaBuffer* buf = nullptr;
+                    if (SUCCEEDED(sample->ConvertToContiguousBuffer(&buf)) && buf) {
+                        BYTE* data = nullptr;
+                        DWORD len  = 0;
+                        if (SUCCEEDED(buf->Lock(&data, nullptr, &len))) {
+                            out.insert(out.end(), reinterpret_cast<const int16_t*>(data), reinterpret_cast<const int16_t*>(data) + (len / 4) * 2);
+                            buf->Unlock();
+                        }
+                        buf->Release();
+                    }
+                    sample->Release();
+                }
+                if (flags & (MF_SOURCE_READERF_ENDOFSTREAM | MF_SOURCE_READERF_ERROR)) break;
+            }
+            reader->Release();
+        }
+        Mf().Shutdown();
+    }
+    if (SUCCEEDED(hrCom)) CoUninitialize();
+
+    if (out.empty()) { // Reserve: ffmpeg.exe (ogg, opus u.a.)
+        wchar_t ffmpeg[MAX_PATH * 2] = {};
+        if (SearchPathW(nullptr, L"ffmpeg.exe", nullptr, MAX_PATH * 2, ffmpeg, nullptr)) {
+            SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+            HANDLE              rd = nullptr, wr = nullptr;
+            if (CreatePipe(&rd, &wr, &sa, 1 << 16)) {
+                SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
+                wchar_t secs[32];
+                swprintf(secs, 32, L"%.3f", maxSeconds);
+                std::wstring cmd = L"\"" + std::wstring(ffmpeg) + L"\" -v quiet -nostdin -i \"" + path + L"\" -t " + secs + L" -vn -f s16le -ar 48000 -ac 2 pipe:1";
+                STARTUPINFOW si{};
+                si.cb         = sizeof(si);
+                si.dwFlags    = STARTF_USESTDHANDLES;
+                si.hStdOutput = wr;
+                PROCESS_INFORMATION pi{};
+                const BOOL          ok = CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+                CloseHandle(wr);
+                if (ok) {
+                    std::vector<char> buf(1 << 16);
+                    std::vector<char> bytes;
+                    DWORD             got = 0;
+                    while (bytes.size() / 4 < maxFrames && ReadFile(rd, buf.data(), static_cast<DWORD>(buf.size()), &got, nullptr) && got > 0) bytes.insert(bytes.end(), buf.data(), buf.data() + got);
+                    TerminateProcess(pi.hProcess, 0);
+                    CloseHandle(pi.hProcess);
+                    CloseHandle(pi.hThread);
+                    const size_t frames = bytes.size() / 4;
+                    out.resize(frames * 2);
+                    if (frames) std::memcpy(out.data(), bytes.data(), frames * 4);
+                }
+                CloseHandle(rd);
+            }
+        }
+    }
+    if (out.size() / 2 > maxFrames) out.resize(maxFrames * 2);
+    return !out.empty();
+}

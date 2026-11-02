@@ -30,7 +30,8 @@ oder `scripts\package.ps1` ausführen und `build\VoiceTune.ts3_plugin` doppelkli
 In TeamSpeak: *Einstellungen → Plugins → VoiceTune* aktivieren, falls es nicht von selbst geschieht (das Plugin hat einen neuen Namen). Im Menü *Plugins* steht es danach mit eigenem kleinen Icon.
 
 ## Benutzen
-*Plugins → VoiceTune → Einstellungen…* öffnet das Fenster mit drei Seiten.
+*Plugins → VoiceTune → Einstellungen…* öffnet das Fenster mit vier Seiten. Oben rechts wechselst du die Sprache (**DE | EN**), daneben öffnet **„Hotkeys …“** die Hotkey-Einstellungen von TeamSpeak.
+Die Oberfläche gibt es auf Deutsch und Englisch; „automatisch“ richtet sich nach der Windows-Sprache (nicht Deutsch → English). Die Plugin-Menüeinträge im Plugins-Menü und die Hotkey-Beschreibungen folgen der Sprache beim nächsten Start von TeamSpeak.
 
 ### Seite „Quelle & Mix“
 - **Audio-Quelle**: Kachel-Raster aller Apps mit Audio (Icon, Fenstertitel/Songname). Die Liste ist **live** (jede Sekunde): neue Apps erscheinen von selbst, beendete verschwinden,
@@ -48,6 +49,10 @@ In TeamSpeak: *Einstellungen → Plugins → VoiceTune* aktivieren, falls es nic
 - **Mikrofon stumm** (Mikrofon-Symbol links neben dem Wert der Mikrofon-Lautstärke): deine Stimme wird nicht gesendet, die Musik läuft weiter. Wirkt auch, wenn gerade keine Musik läuft.
   Der Zustand wird **absichtlich nicht gespeichert** – nach einem Neustart ist das Mikrofon wieder an, damit du es nicht versehentlich stumm lässt.
 - **Musik immer senden**: überträgt die Musik auch ohne Push-to-Talk/Sprachaktivierung.
+- **Profile** (rechts unten): ein Profil ist ein benannter Schnappschuss von Quelle, Lautstärken, Mithören, Equalizer, Qualität und Opus-Schaltern (nicht: Stumm, „Musik einspielen“, Musikmodus). **◀ ▶** blättert durch die Profile und wendet sie sofort an,
+  **Speichern als …** legt eines an (oder aktualisiert das gewählte), **Umbenennen** und **Löschen** (zweiter Klick zur Sicherheit) gelten für das gewählte. Hast du nach dem Anwenden etwas verändert, steht „(geändert)“ daneben. Bis zu 30 Profile; per Hotkey „nächstes Profil“ oder Stream Deck wechselst du reihum.
+- **Titel melden** (links unten): bei einem Titelwechsel (Dateititel oder Titel im Fenster der App, z.B. „Artist - Song“ bei Spotify) erscheint eine Zeile *♪ Spielt: …* – standardmäßig im **eigenen Chat**. Optional **im Kanal-Chat**
+  (alle im Kanal sehen es, deshalb standardmäßig aus) oder **in den Client-Metadaten** (dein TeamSpeak-Metadatenfeld, beim Ausschalten wird der alte Wert wiederhergestellt). Gemeldet wird erst, wenn der Titel 3 s stabil ist, nie doppelt, und nur bei eingeschalteter Musik.
 
 ### Seite „Equalizer & Qualität“
 - **Equalizer** mit **10, 31 oder 61 Bändern** (61 = Sechstel-Oktav-Raster, 20 Hz–20 kHz), je ±12 dB. Mit der Maus Bänder ziehen oder eine Kurve über mehrere
@@ -94,6 +99,20 @@ In TeamSpeak: *Einstellungen → Plugins → VoiceTune* aktivieren, falls es nic
 Die Auswahl wird gespeichert; startet die App später neu, verbindet sich das Plugin automatisch wieder.
 Bei Browsern wird der gesamte Browser-Ton aufgenommen (nicht nur ein Tab).
 
+### Seite „Sounds“ (Soundboard)
+- 8 Plätze für kurze Clips (Jingles, bis 30 s, jedes Format der Dateien-Seite). Eine Datei auf eine Kachel ziehen belegt sie, mehrere Dateien füllen freie Plätze; eine leere Kachel anklicken öffnet den Datei-Dialog.
+- **Klick** spielt den Clip über Musik und Mikrofon (bis zu 4 gleichzeitig; derselbe Clip startet von vorn). **Rechtsklick**: Umbenennen, Datei ersetzen, Entfernen. **Alle stoppen** beendet alles. Der Regler **Sound-Lautstärke** (0–200 %) gilt für alle Clips.
+- Clips funktionieren auch ohne Musikquelle und bei stummem Mikrofon; sie gehen durch Optimierung/Begrenzer und werden beim Mithören mitgehört. Beim ersten Abspielen schaltet sich „Musik einspielen“ bei Bedarf ein.
+- Hotkeys *Sound 1 … 8* und *Alle Sounds stoppen*, per Stream Deck `/cmd/sound/<1-8>`. Die Zuordnung (Pfade und Namen) wird gespeichert; Clips werden beim Start neu geladen.
+
+### Hotkeys
+Im TeamSpeak-Hotkey-Dialog (*Einstellungen → Hotkeys → Plugins → VoiceTune* – oder über „Hotkeys …“ im Fenster) gibt es: Musik an/aus, Mikrofon stumm/laut, Musik lauter/leiser, Datei-Player Play/Pause, nächster/vorheriger Titel, Mithören an/aus, nächstes Profil, Sound 1–8, Alle Sounds stoppen.
+Beim Stumm-Hotkey erscheint eine Chat-Zeile „MIKROFON STUMM/AKTIV“.
+
+### Stream Deck / Fernsteuerung
+Das Plugin lässt sich über eine lokale HTTP-Schnittstelle (`127.0.0.1:19470`) steuern: Musik an/aus, Mikrofon stumm, Lautstärke (relativ und absolut), Mithören, EQ-Preset, Profil, Quelle, Soundboard und Datei-Player; dazu Listen der Presets, Profile und Sounds.
+Befehle, Beispiele und Hinweise: [STREAMDECK-API.md](STREAMDECK-API.md).
+
 ### Tipps für guten Klang
 - Für Musik im Kanal-Codec **Opus Music** wählen; der Voice-Codec klingt für Musik schlecht und ist mono.
 - **Sprachaktivierung** schneidet leise Stellen ab; dafür hält das Plugin das Sende-Signal 600 ms nach. Bei Problemen auf *Dauersenden* umstellen.
@@ -104,17 +123,22 @@ Alle Selbsttests laufen ohne TeamSpeak und enden mit „alle Tests ok“ bzw. Ex
 ```
 build\mixer_test.exe                               # Mixer / Ring-Buffer
 build\eq_test.exe                                  # Equalizer (10/31/61 Bänder), FFT, Tonspur-Puffer
-build\settings_test.exe                            # INI-Roundtrip (Einstellungen, eigene Presets)
+build\settings_test.exe                            # INI-Roundtrip (Einstellungen, eigene Presets, Profile, Sounds)
+build\commands_test.exe                            # gemeinsame Befehle (Hotkeys, Stream-Deck-API)
+build\soundboard_test.exe build\pt                # Soundboard (Mischen, Stimmen, Laden aus Dateien)
+build\nowplaying_test.exe                          # Titelbereinigung für „Titel melden“
+build\i18n_test.exe                                # Übersetzungstabelle Deutsch/English
 build\playlist_test.exe                            # Wiedergabeliste
 build\jitter_test.exe                              # Simulation: alte vs. neue Puffer-Logik, Mithör-Verzögerung
 build\optimizer_test.exe                           # Klang-Optimierung: Mono-Summe, Hochpass, Begrenzer
 build\opus_test.exe                                # Opus-Vorschau: Bitrate, Bandbreite, Verzögerung, Mono/Stereo
 build\player_test.exe build\pt                     # Datei-Player (tone.wav/mp3/flac/… in build\pt: 3 s 440 Hz, dann 3 s 880 Hz)
-build\engine_files_test.exe build\pt               # Engine in Echtzeit: Dateien, Springen, Stumm, Opus-Vorschau (dauert ~1 Minute)
+build\engine_files_test.exe build\pt               # Engine in Echtzeit: Dateien, Springen, Stumm, Opus-Vorschau, Soundboard, Profile, Now-Playing (dauert ~1,5 Minuten)
 build\capture_test.exe --list                      # erkannte Apps; capture_test.exe spotify.exe 5 spotify.wav nimmt 5 s auf
 build\ts3_host_test.exe build\VoiceTune_win64.dll [--mix 10 out.raw | --monitor 6 | --toggle | --ui shot.bmp]
 ```
 `ts3_host_test` stellt TeamSpeak nach: lädt die DLL, ruft die Exports in Client-Reihenfolge auf und treibt den Mikrofon-Callback im 20-ms-Takt (`--mix`),
 zusätzlich den Wiedergabe-Callback für das Mithören (`--monitor`), löst die Menü-Aktion samt Chat-Meldung aus (`--toggle`) oder öffnet das Fenster und speichert Screenshots (`--ui`).
-Mit den Umgebungsvariablen `AAM_FILES=<Ordner>` (Dateien-Seite per simuliertem Drop) und `AAM_NEW=1` (Stumm-Knopf, Opus-Zeile) werden bestimmte Abläufe geprüft;
+Mit den Umgebungsvariablen `AAM_FILES=<Ordner>` (Dateien-Seite per simuliertem Drop), `AAM_NEW=1` (Stumm-Knopf, Opus-Zeile), `AAM_UI3=<Ordner>` (Profile, Soundboard) und `AAM_EN=1` (alle Seiten auf Englisch) werden bestimmte Abläufe fotografiert
+(`AAM_HOLD=<Sekunden>` lässt das Fenster zum Anschauen offen);
 `AAM_BITRATE=<bit/s>` setzt die vom nachgestellten TS3 gemeldete Opus-Bitrate. Das Testfenster ist für echte Maus- und Tastatureingaben gesperrt; die Einstellungen landen in `%TEMP%`, nicht in deinem TS3-Ordner.

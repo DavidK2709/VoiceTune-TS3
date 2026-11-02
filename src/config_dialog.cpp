@@ -30,7 +30,7 @@ constexpr UINT     WM_APPS_READY = WM_APP + 1;
 constexpr UINT_PTR kTimerId      = 1;
 constexpr int      kTimerMs      = 33;
 constexpr int      kRefreshTicks = 30; // ~1 s: App-Liste ist live
-constexpr float    kW = 820, kH = 780;
+constexpr float    kW = 820, kH = 844;
 constexpr int      kMaxDelayMs = 2000;
 constexpr int      kFftSize    = 8192;
 constexpr int      kGridCols   = 6;
@@ -42,7 +42,10 @@ enum class Hit {
     // Seite "Quelle & Mix"
     MainToggle, MenuItem, MenuBody, MicMute, Tile, Grid, SliderMusic, SliderMic, MonitorToggle, SliderDelay, AlwaysToggle,
     // Seite "Equalizer"
-    EqToggle, EqBandsBtn, PresetField, PresetItem, PresetPopup, PresetSave, PresetRename, PresetDelete, EqPlot, Listen, ListenToggle, QualityBtn, MonoToggle, MusicModeToggle, SliderGate, OptimizeToggle, OpusToggle
+    EqToggle, EqBandsBtn, PresetField, PresetItem, PresetPopup, PresetSave, PresetRename, PresetDelete, EqPlot, Listen, ListenToggle, QualityBtn, MonoToggle, MusicModeToggle, SliderGate, OptimizeToggle, OpusToggle,
+    // Profile, Titel melden, Kopfzeile, Soundboard
+    TabSounds, ProfPrev, ProfNext, ProfField, ProfSave, ProfRename, ProfDelete, NowChat, NowChannel, NowMeta, HotkeyBtn, LangDe, LangEn, SoundTile, SoundVol, SoundStop,
+    SoundEditOk, SoundEditCancel
 };
 struct HitInfo {
     Hit hit = Hit::None;
@@ -50,11 +53,11 @@ struct HitInfo {
     bool operator==(const HitInfo& o) const { return hit == o.hit && idx == o.idx; }
 };
 
-enum Anim { A_MAIN, A_ALWAYS, A_MONITOR, A_EQ, A_MONO, A_MUSIC, A_LISTEN, A_OPT, A_OPUS, A_COUNT };
+enum Anim { A_MAIN, A_ALWAYS, A_MONITOR, A_EQ, A_MONO, A_MUSIC, A_LISTEN, A_OPT, A_OPUS, A_NOWCHAT, A_NOWCHANNEL, A_NOWMETA, A_COUNT };
 
 struct Layout {
     float s = 1;
-    RectF header, tab[3];
+    RectF header, tab[4];
     // Seite 2 (Dateien)
     RectF filesNow, fileSeek, btnPrev, btnPlay, btnStop, btnNext, btnRepeat, btnClear, btnOpen, fileCard, fileArea;
     // Seite 0
@@ -63,6 +66,9 @@ struct Layout {
     // Seite 1
     RectF eqCard, bandBtn[3], eqToggle, presetField, presetSave, presetRename, presetDelete, plot, listenBtn, listenToggle, tonCard, tonPlot, qualCard, qualBtn[3], monoToggle, musicModeToggle, sliderGate, optimizeToggle, opusToggle;
     RectF diag, codec;
+    // Kopfzeile / Seite 0 (Profile, Titel melden) / Seite 3 (Sounds)
+    RectF hotkeyBtn, langDe, langEn, nowCard, nowToggle[3], profCard, profPrev, profNext, profField, profSave, profRename, profDelete, profHint;
+    RectF soundCard, soundTile[kSoundSlots], soundVol, soundStop, soundEditField, soundEditOk, soundEditCancel;
     float tileW = 0, tileH = 0, gap = 0;
 };
 
@@ -75,6 +81,10 @@ Layout MakeLayout(float s)
     l.tab[0] = R(16, 88, 170, 36);
     l.tab[1] = R(194, 88, 170, 36);
     l.tab[2] = R(412, 88, 130, 36);
+    l.tab[3] = R(550, 88, 130, 36);
+    l.hotkeyBtn = R(688, 88, 116, 36);
+    l.langDe    = R(622, 36, 32, 24);
+    l.langEn    = R(658, 36, 32, 24);
 
     l.filesNow  = R(16, 132, 788, 150);
     l.fileSeek  = R(32, 132 + 62, 756, 22);
@@ -127,8 +137,29 @@ Layout MakeLayout(float s)
     l.sliderGate      = R(16 + 788 - 16 - 260, 612 + 55, 260, 22);
     l.optimizeToggle  = R(16 + 16, 612 + 98, 48, 26);
     l.opusToggle      = R(16 + 400, 612 + 98, 48, 26);
-    l.diag            = R(20, 756, 290, 16);
-    l.codec           = R(310, 756, 474, 16);
+    l.diag            = R(20, 820, 290, 16);
+    l.codec           = R(310, 820, 474, 16);
+
+    // Seite 0, unterer Teil: links "Titel melden", rechts "Profile"
+    l.nowCard = R(16, 688, 388, 124);
+    for (int i = 0; i < 3; ++i) l.nowToggle[i] = R(16 + 388 - 16 - 48, 688 + 32 + i * 30, 48, 26);
+    l.profCard   = R(416, 658, 388, 154);
+    l.profPrev   = R(432, 696, 30, 28);
+    l.profField  = R(468, 696, 284, 28);
+    l.profNext   = R(758, 696, 30, 28);
+    l.profSave   = R(432, 736, 140, 28);
+    l.profRename = R(580, 736, 100, 28);
+    l.profDelete = R(688, 736, 100, 28);
+    l.profHint   = R(432, 772, 356, 34);
+
+    // Seite 3 "Sounds": 4 x 2 Kacheln, darunter Lautstaerke und "Alle stoppen"
+    l.soundCard = R(16, 132, 788, 500);
+    for (int i = 0; i < kSoundSlots; ++i) l.soundTile[i] = R(32 + (i % 4) * 192, 216 + (i / 4) * 162, 180, 150);
+    l.soundVol  = R(32, 580, 420, 22);
+    l.soundStop = R(620, 566, 168, 34);
+    l.soundEditField  = R(32, 176, 420, 28);
+    l.soundEditOk     = R(460, 176, 110, 28);
+    l.soundEditCancel = R(578, 176, 110, 28);
     return l;
 }
 
@@ -215,11 +246,14 @@ struct Ctx {
     struct {
         bool         active = false, rename = false, selectAll = false;
         std::wstring text, original;
+        int          kind = 0; // 0 = EQ-Filter, 1 = Profil, 2 = Sound-Name
+        int          slot = -1; // Sound-Slot bei kind 2
     } edit;
     int          deleteArm  = 0; // verbleibende Ticks, in denen "Wirklich loeschen?" gilt
     std::wstring toast;
     bool         toastBad    = false;
     int          toastTicks  = 0;
+    float        soundFlash[kSoundSlots] = {}; // Aufleuchten einer Sound-Kachel nach dem Klick
 };
 
 // APP-ICON.png aus den Ressourcen der DLL (nicht der .exe von TeamSpeak!) laden
@@ -423,10 +457,10 @@ struct PRow {
 std::vector<PRow> PopupRows(const Settings& st)
 {
     std::vector<PRow> r;
-    r.push_back({0, L"STANDARD", -1});
+    r.push_back({0, Tr(L"STANDARD"), -1});
     for (int i = 0; i < eq::kPresetCount; ++i) r.push_back({1, eq::PresetName(i), i});
-    r.push_back({0, L"EIGENE FILTER", -1});
-    if (st.userPresets.items.empty()) r.push_back({2, L"Noch keiner – „Speichern als …“ legt einen an", -1});
+    r.push_back({0, Tr(L"EIGENE FILTER"), -1});
+    if (st.userPresets.items.empty()) r.push_back({2, Tr(L"Noch keiner – „Speichern als …“ legt einen an"), -1});
     for (size_t u = 0; u < st.userPresets.items.size(); ++u) r.push_back({1, st.userPresets.items[u].name, 100 + static_cast<int>(u)});
     return r;
 }
@@ -455,7 +489,7 @@ RectF PopupRowRect(const Layout& l, const std::vector<PRow>& rows, size_t index,
 
 // Welches Preset ist gerade gewaehlt? Ein gewaehlter Name zaehlt auch dann, wenn die Kurve danach veraendert wurde ("geaendert").
 struct CurPreset {
-    std::wstring label = L"Eigene Kurve";
+    std::wstring label = Tr(L"Eigene Kurve");
     bool         user = false, builtin = false, modified = false;
 };
 
@@ -500,15 +534,27 @@ CurPreset CurrentPreset(const Settings& st)
 HitInfo HitTest(Ctx* c, int x, int y)
 {
     const Layout& l = c->lay;
-    if (c->page == 0 && c->menu.open) { // Rechtsklick-Menue liegt ueber allem
+    if ((c->page == 0 || c->page == 3) && c->menu.open) { // Rechtsklick-Menue liegt ueber allem
         for (size_t i = 0; i < c->menu.items.size(); ++i)
             if (In(MenuItemRect(l, c->menu, i), x, y)) return {Hit::MenuItem, static_cast<int>(i)};
         if (In(MenuRect(l, c->menu), x, y)) return {Hit::MenuBody, -1};
     }
-    for (int i = 0; i < 3; ++i)
-        if (In(l.tab[i], x, y)) return {i == 0 ? Hit::TabMix : (i == 1 ? Hit::TabEq : Hit::TabFiles), i};
+    if (In(l.langDe, x, y)) return {Hit::LangDe, -1};
+    if (In(l.langEn, x, y)) return {Hit::LangEn, -1};
+    if (In(l.hotkeyBtn, x, y)) return {Hit::HotkeyBtn, -1};
+    for (int i = 0; i < 4; ++i)
+        if (In(l.tab[i], x, y)) return {i == 0 ? Hit::TabMix : (i == 1 ? Hit::TabEq : (i == 2 ? Hit::TabFiles : Hit::TabSounds)), i};
 
     if (c->page == 0) {
+        for (int i = 0; i < 3; ++i)
+            if (In(RectF(l.nowCard.X, l.nowToggle[i].Y - 2 * l.s, l.nowCard.Width, l.nowToggle[i].Height + 4 * l.s), x, y))
+                return {i == 0 ? Hit::NowChat : (i == 1 ? Hit::NowChannel : Hit::NowMeta), i};
+        if (In(l.profPrev, x, y)) return {Hit::ProfPrev, -1};
+        if (In(l.profNext, x, y)) return {Hit::ProfNext, -1};
+        if (In(l.profField, x, y)) return {Hit::ProfField, -1};
+        if (In(l.profSave, x, y)) return {Hit::ProfSave, -1};
+        if (In(l.profRename, x, y)) return {Hit::ProfRename, -1};
+        if (!(c->edit.active && c->edit.kind == 1) && In(l.profDelete, x, y)) return {Hit::ProfDelete, -1};
         if (In(l.mainCard, x, y)) return {Hit::MainToggle, -1};
         if (In(l.micMute, x, y)) return {Hit::MicMute, -1};
         if (In(l.sliderMusic, x, y)) return {Hit::SliderMusic, -1};
@@ -535,6 +581,15 @@ HitInfo HitTest(Ctx* c, int x, int y)
             const int i     = static_cast<int>((y - l.fileArea.Y + c->fileScroll) / (40 * l.s));
             if (i >= 0 && i < count) return {x >= l.fileArea.X + l.fileArea.Width - 44 * l.s ? Hit::FileRemove : Hit::FileRow, i};
         }
+    } else if (c->page == 3) {
+        if (c->edit.active && c->edit.kind == 2) {
+            if (In(l.soundEditOk, x, y)) return {Hit::SoundEditOk, -1};
+            if (In(l.soundEditCancel, x, y)) return {Hit::SoundEditCancel, -1};
+        }
+        if (In(l.soundVol, x, y)) return {Hit::SoundVol, -1};
+        if (In(l.soundStop, x, y)) return {Hit::SoundStop, -1};
+        for (int i = 0; i < kSoundSlots; ++i)
+            if (In(l.soundTile[i], x, y)) return {Hit::SoundTile, i};
     } else {
         for (int i = 0; i < 3; ++i)
             if (In(l.bandBtn[i], x, y)) return {Hit::EqBandsBtn, i};
@@ -645,6 +700,87 @@ void DrawButton(Graphics& g, const RectF& r, const std::wstring& label, const Fo
     Text(g, label, f, r, selected ? C(0xFFFFFF) : C(col::text), StringAlignmentCenter);
 }
 
+// ---- Anzeige-Uebersetzung fuer Texte, die die Engine/das Plugin auf Deutsch liefert (die Oberflaeche wertet sie deutsch aus) -------------------------------
+std::wstring ReplaceAll(std::wstring s, const std::wstring& from, const std::wstring& to)
+{
+    if (from.empty()) return s;
+    for (size_t p = 0; (p = s.find(from, p)) != std::wstring::npos; p += to.size()) s.replace(p, from.size(), to);
+    return s;
+}
+
+bool StartsWith(const std::wstring& s, const wchar_t* prefix) { return s.rfind(prefix, 0) == 0; }
+
+// Status der Engine: "Aus", "Aktiv: spotify.exe (PID 12)", "Warte auf X (App starten ...)", "X: Capture-Start fehlgeschlagen (0x...)"
+std::wstring TrStatus(const std::wstring& st)
+{
+    if (i18n::Current() == i18n::Lang::German) return st;
+    const std::wstring whole = Tr(st);
+    if (whole != st) return whole;
+    if (StartsWith(st, L"Aktiv: ")) return std::wstring(Tr(L"Aktiv: ")) + st.substr(7);
+    if (StartsWith(st, L"Warte auf ")) {
+        const std::wstring tail = L" (App starten und Ton abspielen)";
+        if (st.size() > 10 + tail.size() && st.compare(st.size() - tail.size(), tail.size(), tail) == 0) {
+            std::wstring pattern = Tr(L"Warte auf %s (App starten und Ton abspielen)");
+            const size_t pos     = pattern.find(L"%s");
+            if (pos != std::wstring::npos) pattern.replace(pos, 2, st.substr(10, st.size() - 10 - tail.size()));
+            return pattern;
+        }
+    }
+    return ReplaceAll(st, L"Capture-Start fehlgeschlagen", Tr(L"Capture-Start fehlgeschlagen"));
+}
+
+// Diagnosezeile: "Puffer 20-30 ms  |  Aussetzer 0  |  Takt +0.00 %  |  TS3 sendet 100 %" bzw. "Keine Aufnahme aktiv"
+std::wstring TrDiag(const std::wstring& d)
+{
+    if (i18n::Current() == i18n::Lang::German) return d;
+    const std::wstring whole = Tr(d);
+    if (whole != d) return whole;
+    std::wstring out = ReplaceAll(d, L"Puffer ", Tr(L"Puffer "));
+    out = ReplaceAll(out, L"Aussetzer", Tr(L"Aussetzer"));
+    out = ReplaceAll(out, L"Takt", Tr(L"Takt"));
+    return ReplaceAll(out, L"TS3 sendet", Tr(L"TS3 sendet"));
+}
+
+std::wstring TrCodec(const std::wstring& c) { return ReplaceAll(c, L", Qualität ", Tr(L", Qualität ")); }
+std::wstring TrOpus(const std::wstring& o) { return ReplaceAll(o, L" (geschätzt)", Tr(L" (geschätzt)")); }
+std::wstring TrMsg(const std::wstring& m) { return StartsWith(m, L"Nicht abspielbar: ") ? std::wstring(Tr(L"Nicht abspielbar: ")) + m.substr(18) : m; }
+
+// Namenseingabe (Text mit blinkendem Cursor, optional komplett markiert) im Feld f
+void DrawEditField(Graphics& g, Ctx* c, const RectF& f, float s)
+{
+    FillRound(g, f, 8 * s, C(col::bg));
+    StrokeRound(g, f, 8 * s, C(col::accent, 230), 1.5f);
+    StringFormat fmt(StringFormat::GenericTypographic());
+    fmt.SetFormatFlags(fmt.GetFormatFlags() | StringFormatFlagsMeasureTrailingSpaces | StringFormatFlagsNoWrap);
+    const float         tx = f.X + 12 * s, ty = f.Y + (f.Height - 16 * s) / 2;
+    const std::wstring& t  = c->edit.text;
+    RectF               box(0, 0, 0, 0);
+    g.MeasureString(t.c_str(), static_cast<INT>(t.size()), c->fBody.get(), PointF(tx, ty), &fmt, &box);
+    if (c->edit.selectAll && !t.empty()) FillRound(g, RectF(tx - 2 * s, ty - 1 * s, box.Width + 4 * s, 18 * s), 3 * s, C(col::accent, 120));
+    if (t.empty()) {
+        SolidBrush         b(C(col::sub));
+        const std::wstring ph = Tr(L"Name eingeben …");
+        g.DrawString(ph.c_str(), -1, c->fBody.get(), PointF(tx, ty), &fmt, &b);
+    } else {
+        SolidBrush b(C(col::text));
+        g.DrawString(t.c_str(), static_cast<INT>(t.size()), c->fBody.get(), PointF(tx, ty), &fmt, &b);
+    }
+    if ((c->tick / 14) % 2 == 0) {
+        Pen caret(C(col::text), std::max(1.2f, s));
+        g.DrawLine(&caret, tx + box.Width + 1 * s, ty, tx + box.Width + 1 * s, ty + 16 * s);
+    }
+}
+
+// Kleiner Pfeil-Knopf (links/rechts), z.B. zum Blaettern durch Profile
+void DrawArrowBtn(Graphics& g, const RectF& r, bool left, bool hover, bool enabled, float s)
+{
+    FillRound(g, r, 8 * s, enabled ? (hover ? C(col::cardHover) : C(col::track, 140)) : C(col::track, 60));
+    const float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2, d = left ? -1.0f : 1.0f;
+    PointF      tri[3] = {PointF(cx + d * 4 * s, cy), PointF(cx - d * 3 * s, cy - 6 * s), PointF(cx - d * 3 * s, cy + 6 * s)};
+    SolidBrush  b(enabled ? C(col::text) : C(col::sub, 120));
+    g.FillPolygon(&b, tri, 3);
+}
+
 void Paint(Ctx* c, HDC dc, const RECT& rc)
 {
     const int w = rc.right - rc.left, h = rc.bottom - rc.top;
@@ -686,47 +822,54 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
         {
             std::wstring label;
             uint32_t     color;
-            if (status.rfind(L"Aktiv", 0) == 0) { label = L"AKTIV"; color = col::ok; }
-            else if (status.find(L"fehlgeschlagen") != std::wstring::npos) { label = L"FEHLER"; color = col::bad; }
-            else if (!st.enabled) { label = L"AUS"; color = col::sub; }
-            else { label = L"WARTET"; color = col::warn; }
+            if (status.rfind(L"Aktiv", 0) == 0) { label = Tr(L"AKTIV"); color = col::ok; }
+            else if (status.find(L"fehlgeschlagen") != std::wstring::npos) { label = Tr(L"FEHLER"); color = col::bad; }
+            else if (!st.enabled) { label = Tr(L"AUS"); color = col::sub; }
+            else { label = Tr(L"WARTET"); color = col::warn; }
             RectF pill(l.header.X + l.header.Width - 14 * s - 92 * s, l.header.Y + 20 * s, 92 * s, 24 * s);
             FillRound(g, pill, 12 * s, C(color, 38));
             FillCircle(g, pill.X + 14 * s, pill.Y + 12 * s, 4 * s, C(color));
             Text(g, label, *c->fSmall, RectF(pill.X + 24 * s, pill.Y, pill.Width - 24 * s, pill.Height), C(color));
         }
+        {   // Sprache: DE | EN
+            const bool de = i18n::Current() == i18n::Lang::German;
+            DrawButton(g, l.langDe, L"DE", *c->fSmall, de, hv.hit == Hit::LangDe, s);
+            DrawButton(g, l.langEn, L"EN", *c->fSmall, !de, hv.hit == Hit::LangEn, s);
+        }
 
         // --- Tabs --------------------------------------------------------------------
         {
-            const wchar_t* names[3] = {L"Quelle & Mix", L"Equalizer & Qualität", L"Dateien"};
-            for (int i = 0; i < 3; ++i) {
-                const bool active = c->page == i, hover = hv.hit == (i == 0 ? Hit::TabMix : (i == 1 ? Hit::TabEq : Hit::TabFiles));
+            const wchar_t* names[4] = {Tr(L"Quelle & Mix"), Tr(L"Equalizer & Qualität"), Tr(L"Dateien"), Tr(L"Sounds")};
+            for (int i = 0; i < 4; ++i) {
+                const Hit  tabHit = i == 0 ? Hit::TabMix : (i == 1 ? Hit::TabEq : (i == 2 ? Hit::TabFiles : Hit::TabSounds));
+                const bool active = c->page == i, hover = hv.hit == tabHit;
                 RectF      r = l.tab[i];
                 if (i == 1) r.Width += 40 * s;
                 FillRound(g, r, 9 * s, active ? C(col::accent, 46) : (hover ? C(col::cardHover) : C(col::card)));
                 if (active) StrokeRound(g, r, 9 * s, C(col::accent, 150));
                 Text(g, names[i], *c->fBody, r, active ? C(col::text) : C(col::sub), StringAlignmentCenter);
             }
+            DrawButton(g, l.hotkeyBtn, Tr(L"Hotkeys …"), *c->fSmall, false, hv.hit == Hit::HotkeyBtn, s);
         }
 
         if (c->page == 0) {
             // --- Hauptschalter ---------------------------------------------------------
             card(l.mainCard);
             if (hv.hit == Hit::MainToggle) FillRound(g, l.mainCard, 10 * s, C(0xFFFFFF, 8));
-            Text(g, L"Musik einspielen", *c->fHead, pad(l.mainCard, 16, 8, 400, 24), C(col::text));
-            Text(g, status, *c->fSmall, pad(l.mainCard, 16, 33, 620, 20), C(col::sub));
+            Text(g, Tr(L"Musik einspielen"), *c->fHead, pad(l.mainCard, 16, 8, 400, 24), C(col::text));
+            Text(g, TrStatus(status), *c->fSmall, pad(l.mainCard, 16, 33, 620, 20), C(col::sub));
             DrawToggle(g, l.mainToggle, c->anim[A_MAIN]);
 
             // --- App-Raster ------------------------------------------------------------
             card(l.gridCard);
-            Text(g, L"Audio-Quelle", *c->fHead, pad(l.gridCard, 16, 8, 200, 28), C(col::text));
-            Text(g, std::to_wstring(AliveCount(c)) + L" Apps mit Audio" + (st.hiddenApps.empty() ? L"" : L"  ·  " + std::to_wstring(st.hiddenApps.size()) + L" ausgeblendet"), *c->fSmall,
+            Text(g, Tr(L"Audio-Quelle"), *c->fHead, pad(l.gridCard, 16, 8, 200, 28), C(col::text));
+            Text(g, std::to_wstring(AliveCount(c)) + Tr(L" Apps mit Audio") + (st.hiddenApps.empty() ? L"" : L"  ·  " + std::to_wstring(st.hiddenApps.size()) + Tr(L" ausgeblendet")), *c->fSmall,
                  pad(l.gridCard, 130, 8, 260, 28), C(col::sub));
-            Text(g, L"Rechtsklick auf eine App: ausblenden  ·  Rechtsklick ins Leere: alle wieder einblenden", *c->fTiny,
+            Text(g, Tr(L"Rechtsklick auf eine App: ausblenden  ·  Rechtsklick ins Leere: alle wieder einblenden"), *c->fTiny,
                  RectF(l.gridCard.X + l.gridCard.Width - 12 * s - 430 * s, l.gridCard.Y + 8 * s, 430 * s, 28 * s), C(col::sub, 170), StringAlignmentFar);
             g.SetClip(l.gridArea);
             if (c->tiles.empty())
-                Text(g, c->haveApps ? L"Keine App mit Audio gefunden.\nStarte Spotify oder spiele ein Video ab." : L"Suche Apps ...", *c->fBody, l.gridArea, C(col::sub),
+                Text(g, c->haveApps ? Tr(L"Keine App mit Audio gefunden.\nStarte Spotify oder spiele ein Video ab.") : Tr(L"Suche Apps ..."), *c->fBody, l.gridArea, C(col::sub),
                      StringAlignmentCenter);
             const double animTime = c->tick * (kTimerMs / 1000.0);
             for (size_t i = 0; i < c->tiles.size(); ++i) {
@@ -743,7 +886,7 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                     Text(g, PrettyExeName(a.exe).substr(0, 1), *c->fHead, RectF(t.X, t.Y + 12 * s, t.Width, 32 * s), C(col::text), StringAlignmentCenter);
                 }
                 Text(g, PrettyExeName(a.exe), *c->fBody, RectF(t.X + 6 * s, t.Y + 50 * s, t.Width - 12 * s, 22 * s), C(col::text), StringAlignmentCenter);
-                Text(g, a.pid == 0 ? L"nicht gestartet" : (a.title.empty() ? a.exe : a.title), *c->fTiny, RectF(t.X + 6 * s, t.Y + 72 * s, t.Width - 12 * s, 20 * s),
+                Text(g, a.pid == 0 ? Tr(L"nicht gestartet") : (a.title.empty() ? a.exe : a.title), *c->fTiny, RectF(t.X + 6 * s, t.Y + 72 * s, t.Width - 12 * s, 20 * s),
                      C(col::sub), StringAlignmentCenter);
                 if (ts.amp > 0.02f) DrawActivityBars(g, t.X + t.Width - 28 * s, t.Y + 24 * s, s, ts.amp, animTime, ts.phase); // statt des gruenen Punkts
             }
@@ -757,7 +900,7 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
 
             // --- Pegel + Lautstaerke -----------------------------------------------------
             card(l.mixCard);
-            Text(g, L"Pegel der eingespielten Musik", *c->fHead, pad(l.mixCard, 16, 6, 340, 26), C(col::text));
+            Text(g, Tr(L"Pegel der eingespielten Musik"), *c->fHead, pad(l.mixCard, 16, 6, 340, 26), C(col::text));
             DrawMeter(g, l.meterL, c->dispL, c->holdL);
             DrawMeter(g, l.meterR, c->dispR, c->holdR);
             Text(g, L"L", *c->fSmall, RectF(l.meterL.X - 14 * s, l.meterL.Y - 3 * s, 12 * s, l.meterL.Height + 6 * s), C(col::sub));
@@ -767,10 +910,10 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                 Text(g, value, *c->fBody, RectF(area.X + area.Width - 80 * s, area.Y - 24 * s, 80 * s, 22 * s), C(col::sub), StringAlignmentFar);
                 DrawSlider(g, area, frac, active, mark, dim);
             };
-            sliderRow(L"Musik-Lautstärke", l.sliderMusic, std::to_wstring(st.musicVolPct) + L" %", st.musicVolPct / 200.0f,
+            sliderRow(Tr(L"Musik-Lautstärke"), l.sliderMusic, std::to_wstring(st.musicVolPct) + L" %", st.musicVolPct / 200.0f,
                       c->drag.hit == Hit::SliderMusic || hv.hit == Hit::SliderMusic, true, false, false);
             const bool muted = en.IsMicMuted();
-            sliderRow(L"Mikrofon-Lautstärke", l.sliderMic, muted ? std::wstring(L"stumm") : std::to_wstring(st.micVolPct) + L" %", st.micVolPct / 200.0f,
+            sliderRow(Tr(L"Mikrofon-Lautstärke"), l.sliderMic, muted ? std::wstring(Tr(L"stumm")) : std::to_wstring(st.micVolPct) + L" %", st.micVolPct / 200.0f,
                       c->drag.hit == Hit::SliderMic || hv.hit == Hit::SliderMic, true, muted, muted);
             {   // Stumm-Knopf: Mikrofon-Symbol, bei "stumm" rot und durchgestrichen
                 const RectF& b   = l.micMute;
@@ -792,19 +935,69 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
             // --- Mithoeren ----------------------------------------------------------------
             card(l.monitorCard);
             if (hv.hit == Hit::MonitorToggle) FillRound(g, l.monitorRow, 10 * s, C(0xFFFFFF, 8));
-            Text(g, L"Mithören", *c->fHead, pad(l.monitorCard, 16, 8, 300, 24), C(col::text));
-            Text(g, st.monitor ? L"Du hörst die Musik verzögert in TeamSpeak" : L"Aus – prüfe, was die anderen hören", *c->fSmall, pad(l.monitorCard, 16, 32, 270, 18),
+            Text(g, Tr(L"Mithören"), *c->fHead, pad(l.monitorCard, 16, 8, 300, 24), C(col::text));
+            Text(g, st.monitor ? Tr(L"Du hörst die Musik verzögert in TeamSpeak") : Tr(L"Aus – prüfe, was die anderen hören"), *c->fSmall, pad(l.monitorCard, 16, 32, 270, 18),
                  C(col::sub));
             DrawToggle(g, l.monitorToggle, c->anim[A_MONITOR]);
-            sliderRow(L"Verzögerung", l.sliderDelay, std::to_wstring(st.monitorDelayMs) + L" ms", st.monitorDelayMs / static_cast<float>(kMaxDelayMs),
+            sliderRow(Tr(L"Verzögerung"), l.sliderDelay, std::to_wstring(st.monitorDelayMs) + L" ms", st.monitorDelayMs / static_cast<float>(kMaxDelayMs),
                       c->drag.hit == Hit::SliderDelay || hv.hit == Hit::SliderDelay, false, !st.monitor, !st.monitor);
 
             // --- Option ---------------------------------------------------------------------
             card(l.optCard);
             if (hv.hit == Hit::AlwaysToggle) FillRound(g, l.optCard, 10 * s, C(0xFFFFFF, 8));
-            Text(g, L"Musik immer senden", *c->fBody, pad(l.optCard, 16, 7, 300, 22), C(col::text));
-            Text(g, L"Auch ohne Sprachaktivierung / Push-to-Talk", *c->fSmall, pad(l.optCard, 16, 29, 330, 18), C(col::sub));
+            Text(g, Tr(L"Musik immer senden"), *c->fBody, pad(l.optCard, 16, 7, 300, 22), C(col::text));
+            Text(g, Tr(L"Auch ohne Sprachaktivierung / Push-to-Talk"), *c->fSmall, pad(l.optCard, 16, 29, 330, 18), C(col::sub));
             DrawToggle(g, l.optToggle, c->anim[A_ALWAYS]);
+
+            // --- Titel melden (Now-Playing) ----------------------------------------------------
+            {
+                card(l.nowCard);
+                Text(g, Tr(L"Titel melden"), *c->fHead, pad(l.nowCard, 16, 6, 300, 24), C(col::text));
+                const wchar_t* labels[3] = {Tr(L"Im eigenen Chat"), Tr(L"Im Kanal-Chat (alle sehen es)"), Tr(L"In den Client-Metadaten")};
+                for (int i = 0; i < 3; ++i) {
+                    const bool hov = hv.hit == (i == 0 ? Hit::NowChat : (i == 1 ? Hit::NowChannel : Hit::NowMeta));
+                    if (hov) FillRound(g, RectF(l.nowCard.X + 6 * s, l.nowToggle[i].Y - 2 * s, l.nowCard.Width - 12 * s, l.nowToggle[i].Height + 4 * s), 8 * s, C(0xFFFFFF, 8));
+                    Text(g, labels[i], *c->fBody, RectF(l.nowCard.X + 16 * s, l.nowToggle[i].Y, 300 * s, l.nowToggle[i].Height), i == 1 ? C(col::warn) : C(col::text));
+                    DrawToggle(g, l.nowToggle[i], c->anim[A_NOWCHAT + i]);
+                }
+            }
+
+            // --- Profile: benannte Schnappschuesse der Einstellungen ---------------------------------
+            {
+                card(l.profCard);
+                Text(g, Tr(L"Profile"), *c->fHead, pad(l.profCard, 16, 8, 200, 26), C(col::text));
+                const bool     editing  = c->edit.active && c->edit.kind == 1;
+                const Profile* curP     = st.profiles.Find(st.profileName);
+                const bool     modified = curP && !SameProfile(*curP, ProfileFromSettings(st));
+                const bool     have     = !st.profiles.items.empty();
+                DrawArrowBtn(g, l.profPrev, true, hv.hit == Hit::ProfPrev, have && !editing, s);
+                DrawArrowBtn(g, l.profNext, false, hv.hit == Hit::ProfNext, have && !editing, s);
+                const RectF& f = l.profField;
+                if (editing) {
+                    DrawEditField(g, c, f, s);
+                } else {
+                    FillRound(g, f, 8 * s, C(col::track, 140));
+                    const std::wstring label = curP ? curP->name : std::wstring(Tr(L"Kein Profil gewählt"));
+                    Text(g, label, *c->fBody, RectF(f.X + 12 * s, f.Y, f.Width - 24 * s, f.Height), curP ? C(col::text) : C(col::sub));
+                    if (modified) {
+                        StringFormat fmt(StringFormat::GenericTypographic());
+                        RectF        m(0, 0, 0, 0);
+                        g.MeasureString(label.c_str(), static_cast<INT>(label.size()), c->fBody.get(), PointF(0, 0), &fmt, &m);
+                        const float x = f.X + 12 * s + std::min(m.Width + 8 * s, f.Width - 110 * s);
+                        Text(g, Tr(L"(geändert)"), *c->fTiny, RectF(x, f.Y, 90 * s, f.Height), C(col::warn));
+                    }
+                }
+                if (!editing) {
+                    DrawButton(g, l.profSave, Tr(L"Speichern als …"), *c->fSmall, false, hv.hit == Hit::ProfSave, s);
+                    DrawButton(g, l.profRename, Tr(L"Umbenennen"), *c->fSmall, false, hv.hit == Hit::ProfRename, s, col::accent, curP != nullptr);
+                    const bool armed = c->deleteArm > 0;
+                    DrawButton(g, l.profDelete, armed ? Tr(L"Wirklich löschen?") : Tr(L"Löschen"), *c->fSmall, armed, hv.hit == Hit::ProfDelete, s, col::bad, curP != nullptr);
+                } else {
+                    DrawButton(g, l.profSave, c->edit.rename ? Tr(L"Umbenennen") : Tr(L"Speichern"), *c->fSmall, true, hv.hit == Hit::ProfSave, s, col::ok);
+                    DrawButton(g, l.profRename, Tr(L"Abbrechen"), *c->fSmall, false, hv.hit == Hit::ProfRename, s);
+                }
+                TextWrap(g, Tr(L"Speichert Quelle, Lautstärken, Mithören, Equalizer, Qualität und Opus."), *c->fTiny, l.profHint, C(col::sub));
+            }
         } else if (c->page == 1) {
             const int   N     = st.eqBands;
             const float colW  = l.plot.Width / N;
@@ -815,13 +1008,13 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
 
             // --- Equalizer-Karte -----------------------------------------------------------
             card(l.eqCard);
-            Text(g, L"Equalizer", *c->fHead, pad(l.eqCard, 16, 10, 120, 26), C(col::text));
+            Text(g, Tr(L"Equalizer"), *c->fHead, pad(l.eqCard, 16, 10, 120, 26), C(col::text));
             for (int i = 0; i < 3; ++i) {
                 const int counts[3] = {10, 31, 61};
                 DrawButton(g, l.bandBtn[i], std::to_wstring(counts[i]), *c->fSmall, st.eqBands == counts[i], hv.hit == Hit::EqBandsBtn && hv.idx == i, s);
             }
-            Text(g, L"Bänder", *c->fSmall, RectF(l.bandBtn[2].X + l.bandBtn[2].Width + 8 * s, l.bandBtn[2].Y, 60 * s, l.bandBtn[2].Height), C(col::sub));
-            labelRight(l.eqToggle, L"EQ aktiv");
+            Text(g, Tr(L"Bänder"), *c->fSmall, RectF(l.bandBtn[2].X + l.bandBtn[2].Width + 8 * s, l.bandBtn[2].Y, 60 * s, l.bandBtn[2].Height), C(col::sub));
+            labelRight(l.eqToggle, Tr(L"EQ aktiv"));
             DrawToggle(g, l.eqToggle, c->anim[A_EQ]);
 
             // Preset-Zeile: Dropdown (mitgelieferte + eigene Filter), Speichern als / Umbenennen / Loeschen, oder Namenseingabe
@@ -841,7 +1034,7 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                     if (c->edit.selectAll && !t.empty()) FillRound(g, RectF(tx - 2 * s, ty - 1 * s, box.Width + 4 * s, 18 * s), 3 * s, C(col::accent, 120));
                     if (t.empty()) {
                         SolidBrush b(C(col::sub));
-                        g.DrawString(L"Name eingeben …", -1, c->fBody.get(), PointF(tx, ty), &fmt, &b);
+                        g.DrawString(Tr(L"Name eingeben …"), -1, c->fBody.get(), PointF(tx, ty), &fmt, &b);
                     } else {
                         SolidBrush b(C(col::text));
                         g.DrawString(t.c_str(), static_cast<INT>(t.size()), c->fBody.get(), PointF(tx, ty), &fmt, &b);
@@ -856,14 +1049,14 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                     const float ix = f.X + 12 * s, iy = f.Y + f.Height / 2;
                     const float hs[3] = {7, 12, 9};
                     for (int i = 0; i < 3; ++i) g.FillRectangle(&bar, ix + i * 5 * s, iy + 6 * s - hs[i] * s, 3 * s, hs[i] * s);
-                    const std::wstring label = cur.label;
+                    const std::wstring label = cur.user ? cur.label : Tr(cur.label);
                     Text(g, label, *c->fBody, RectF(f.X + 38 * s, f.Y, f.Width - 70 * s, f.Height), C(col::text));
                     if (cur.modified) {
                         StringFormat fmt(StringFormat::GenericTypographic());
                         RectF        m(0, 0, 0, 0);
                         g.MeasureString(label.c_str(), static_cast<INT>(label.size()), c->fBody.get(), PointF(0, 0), &fmt, &m);
                         const float x = f.X + 38 * s + std::min(m.Width + 8 * s, f.Width - 150 * s);
-                        Text(g, L"(geändert)", *c->fTiny, RectF(x, f.Y, 80 * s, f.Height), C(col::warn));
+                        Text(g, Tr(L"(geändert)"), *c->fTiny, RectF(x, f.Y, 80 * s, f.Height), C(col::warn));
                     }
                     if (cur.user) FillCircle(g, f.X + f.Width - 44 * s, f.Y + f.Height / 2, 3 * s, C(col::accent)); // Markierung: eigener Filter
                     PointF tri[3] = {PointF(f.X + f.Width - 26 * s, f.Y + 11 * s), PointF(f.X + f.Width - 14 * s, f.Y + 11 * s), PointF(f.X + f.Width - 20 * s, f.Y + 18 * s)};
@@ -872,13 +1065,13 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                 }
             }
             if (!c->edit.active) {
-                DrawButton(g, l.presetSave, L"Speichern als …", *c->fSmall, false, hv.hit == Hit::PresetSave, s);
-                DrawButton(g, l.presetRename, L"Umbenennen", *c->fSmall, false, hv.hit == Hit::PresetRename, s, col::accent, cur.user);
+                DrawButton(g, l.presetSave, Tr(L"Speichern als …"), *c->fSmall, false, hv.hit == Hit::PresetSave, s);
+                DrawButton(g, l.presetRename, Tr(L"Umbenennen"), *c->fSmall, false, hv.hit == Hit::PresetRename, s, col::accent, cur.user);
                 const bool armed = c->deleteArm > 0;
-                DrawButton(g, l.presetDelete, armed ? L"Wirklich löschen?" : L"Löschen", *c->fSmall, armed, hv.hit == Hit::PresetDelete, s, col::bad, cur.user);
+                DrawButton(g, l.presetDelete, armed ? Tr(L"Wirklich löschen?") : Tr(L"Löschen"), *c->fSmall, armed, hv.hit == Hit::PresetDelete, s, col::bad, cur.user);
             } else {
-                DrawButton(g, l.presetSave, c->edit.rename ? L"Umbenennen" : L"Speichern", *c->fSmall, true, hv.hit == Hit::PresetSave, s, col::ok);
-                DrawButton(g, l.presetRename, L"Abbrechen", *c->fSmall, false, hv.hit == Hit::PresetRename, s);
+                DrawButton(g, l.presetSave, c->edit.rename ? Tr(L"Umbenennen") : Tr(L"Speichern"), *c->fSmall, true, hv.hit == Hit::PresetSave, s, col::ok);
+                DrawButton(g, l.presetRename, Tr(L"Abbrechen"), *c->fSmall, false, hv.hit == Hit::PresetRename, s);
             }
 
             // Plot: Hintergrund, Raster, dB-Beschriftung
@@ -961,18 +1154,18 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                 g.FillPolygon(&white, cone2, 3);
                 Pen wave(C(0xFFFFFF), std::max(1.5f, 1.6f * s));
                 g.DrawArc(&wave, ix + 10 * s, iy - 6 * s, 8 * s, 12 * s, -50, 100);
-                Text(g, active ? L"Du hörst mit …" : L"Einstellungen anhören", *c->fBody, RectF(l.listenBtn.X + 34 * s, l.listenBtn.Y, l.listenBtn.Width - 40 * s, l.listenBtn.Height),
+                Text(g, active ? Tr(L"Du hörst mit …") : Tr(L"Einstellungen anhören"), *c->fBody, RectF(l.listenBtn.X + 34 * s, l.listenBtn.Y, l.listenBtn.Width - 40 * s, l.listenBtn.Height),
                      C(0xFFFFFF), StringAlignmentCenter);
-                TextWrap(g, L"So klingt die Musik mit EQ & Qualität in deiner TeamSpeak-Ausgabe (nur wenn du verbunden bist). Knopf halten oder rechts auf „Dauerhaft“ stellen.\nZiehen = Kurve zeichnen  ·  Rechtsklick = Band zurücksetzen",
+                TextWrap(g, Tr(L"So klingt die Musik mit EQ & Qualität in deiner TeamSpeak-Ausgabe (nur wenn du verbunden bist). Knopf halten oder rechts auf „Dauerhaft“ stellen.\nZiehen = Kurve zeichnen  ·  Rechtsklick = Band zurücksetzen"),
                          *c->fTiny, RectF(l.eqCard.X + 16 * s, l.listenBtn.Y - 6 * s, 392 * s, l.listenBtn.Height + 12 * s), C(col::sub));
-                Text(g, L"Dauerhaft", *c->fSmall, RectF(l.listenToggle.X - 76 * s, l.listenToggle.Y, 68 * s, l.listenToggle.Height), C(col::sub), StringAlignmentFar);
+                Text(g, Tr(L"Dauerhaft"), *c->fSmall, RectF(l.listenToggle.X - 76 * s, l.listenToggle.Y, 68 * s, l.listenToggle.Height), C(col::sub), StringAlignmentFar);
                 DrawToggle(g, l.listenToggle, c->anim[A_LISTEN]);
             }
 
             // --- Tonspur ----------------------------------------------------------------------
             card(l.tonCard);
-            Text(g, L"Tonspur – Echtzeit", *c->fHead, pad(l.tonCard, 16, 5, 300, 26), C(col::text));
-            Text(g, L"was gerade ins Mikrofon gemischt wird", *c->fSmall, pad(l.tonCard, 190, 5, 400, 26), C(col::sub));
+            Text(g, Tr(L"Tonspur – Echtzeit"), *c->fHead, pad(l.tonCard, 16, 5, 300, 26), C(col::text));
+            Text(g, Tr(L"was gerade ins Mikrofon gemischt wird"), *c->fSmall, pad(l.tonCard, 190, 5, 400, 26), C(col::sub));
             FillRound(g, RectF(l.tonPlot.X - 4 * s, l.tonPlot.Y - 2 * s, l.tonPlot.Width + 8 * s, l.tonPlot.Height + 4 * s), 8 * s, C(col::bg));
             {
                 const int          cols = static_cast<int>(l.tonPlot.Width / (2 * s));
@@ -993,61 +1186,61 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                 }
             }
             card(l.qualCard);
-            Text(g, L"Qualität", *c->fHead, RectF(l.qualCard.X + 16 * s, l.qualCard.Y + 10 * s, 100 * s, 26 * s), C(col::text));
+            Text(g, Tr(L"Qualität"), *c->fHead, RectF(l.qualCard.X + 16 * s, l.qualCard.Y + 10 * s, 100 * s, 26 * s), C(col::text));
             {
-                const wchar_t* q[3] = {L"Niedrige Latenz", L"Ausgewogen", L"Stabil"};
+                const wchar_t* q[3] = {Tr(L"Niedrige Latenz"), Tr(L"Ausgewogen"), Tr(L"Stabil")};
                 for (int i = 0; i < 3; ++i) DrawButton(g, l.qualBtn[i], q[i], *c->fSmall, st.quality == i, hv.hit == Hit::QualityBtn && hv.idx == i, s);
             }
-            labelRight(l.monoToggle, L"Mono einspielen");
+            labelRight(l.monoToggle, Tr(L"Mono einspielen"));
             DrawToggle(g, l.monoToggle, c->anim[A_MONO]);
 
             // Musikmodus: TS3-Sprachfilter umgehen + Mikro-Gate
             DrawToggle(g, l.musicModeToggle, c->anim[A_MUSIC]);
-            Text(g, L"Musikmodus", *c->fHead, RectF(l.musicModeToggle.X + 60 * s, l.musicModeToggle.Y - 4 * s, 200 * s, 18 * s), C(col::text));
+            Text(g, Tr(L"Musikmodus"), *c->fHead, RectF(l.musicModeToggle.X + 60 * s, l.musicModeToggle.Y - 4 * s, 200 * s, 18 * s), C(col::text));
             {
                 std::wstring text;
                 uint32_t     color = col::sub;
                 if (!st.musicMode) {
-                    text  = L"AUS: Musik kommt nur durch, solange du sprichst";
+                    text  = Tr(L"AUS: Musik kommt nur durch, solange du sprichst");
                     color = col::warn;
                 } else if (en.MusicModeEngaged()) {
                     const bool sends = en.SendShare() >= 0.6f;
-                    text             = sends ? L"aktiv: Dauersenden erzwungen, TS3 sendet die Musik" : L"aktiv, aber TS3 sendet nicht (Details im TS3-Log)";
+                    text             = sends ? Tr(L"aktiv: Dauersenden erzwungen, TS3 sendet die Musik") : Tr(L"aktiv, aber TS3 sendet nicht (Details im TS3-Log)");
                     color            = sends ? col::ok : col::warn;
                 } else {
-                    text = L"bereit: schaltet auf Dauersenden, sobald Musik läuft";
+                    text = Tr(L"bereit: schaltet auf Dauersenden, sobald Musik läuft");
                 }
                 Text(g, text, *c->fTiny, RectF(l.musicModeToggle.X + 60 * s, l.musicModeToggle.Y + 14 * s, 340 * s, 16 * s), C(color));
             }
             {
                 const bool   off = st.gateDb <= -70;
                 const RectF& a   = l.sliderGate;
-                Text(g, L"Mikro-Gate", *c->fBody, RectF(a.X - 92 * s, a.Y, 88 * s, a.Height), C(st.musicMode ? col::text : col::sub), StringAlignmentFar);
-                Text(g, off ? std::wstring(L"aus") : std::to_wstring(st.gateDb) + L" dB", *c->fSmall, RectF(a.X + a.Width - 56 * s, a.Y, 56 * s, a.Height), C(col::sub), StringAlignmentFar);
+                Text(g, Tr(L"Mikro-Gate"), *c->fBody, RectF(a.X - 92 * s, a.Y, 88 * s, a.Height), C(st.musicMode ? col::text : col::sub), StringAlignmentFar);
+                Text(g, off ? std::wstring(Tr(L"aus")) : std::to_wstring(st.gateDb) + L" dB", *c->fSmall, RectF(a.X + a.Width - 56 * s, a.Y, 56 * s, a.Height), C(col::sub), StringAlignmentFar);
                 DrawSlider(g, RectF(a.X, a.Y, a.Width - 60 * s, a.Height), (st.gateDb + 70) / 45.0f, c->drag.hit == Hit::SliderGate || hv.hit == Hit::SliderGate, false, !st.musicMode);
             }
 
             // Opus: Klang fuer die Uebertragung aufbereiten + Vorschau, wie es nach dem Opus-Codec klingt
             DrawToggle(g, l.optimizeToggle, c->anim[A_OPT]);
-            Text(g, L"Klang für Opus optimieren", *c->fHead, RectF(l.optimizeToggle.X + 60 * s, l.optimizeToggle.Y - 4 * s, 300 * s, 18 * s), C(col::text));
-            Text(g, L"Hochpass, phasensichere Mono-Summe, Begrenzer", *c->fTiny, RectF(l.optimizeToggle.X + 60 * s, l.optimizeToggle.Y + 14 * s, 320 * s, 16 * s), C(col::sub));
+            Text(g, Tr(L"Klang für Opus optimieren"), *c->fHead, RectF(l.optimizeToggle.X + 60 * s, l.optimizeToggle.Y - 4 * s, 300 * s, 18 * s), C(col::text));
+            Text(g, Tr(L"Hochpass, phasensichere Mono-Summe, Begrenzer"), *c->fTiny, RectF(l.optimizeToggle.X + 60 * s, l.optimizeToggle.Y + 14 * s, 320 * s, 16 * s), C(col::sub));
             DrawToggle(g, l.opusToggle, c->anim[A_OPUS]);
-            Text(g, L"Vorschau wie Opus", *c->fHead, RectF(l.opusToggle.X + 60 * s, l.opusToggle.Y - 4 * s, 300 * s, 18 * s), C(col::text));
+            Text(g, Tr(L"Vorschau wie Opus"), *c->fHead, RectF(l.opusToggle.X + 60 * s, l.opusToggle.Y - 4 * s, 300 * s, 18 * s), C(col::text));
             {
                 std::wstring info;
                 uint32_t     color = col::sub;
                 if (!OpusPreview::Available()) {
-                    info = L"in dieser Version nicht enthalten";
+                    info = Tr(L"in dieser Version nicht enthalten");
                     color = col::warn;
                 } else if (!st.opusPreview) {
-                    info = L"Mithören/Anhören klingt wie das Original";
+                    info = Tr(L"Mithören/Anhören klingt wie das Original");
                 } else {
-                    info = en.OpusInfo();
-                    if (info.empty()) info = L"wird eingerichtet …";
+                    info = TrOpus(en.OpusInfo());
+                    if (info.empty()) info = Tr(L"wird eingerichtet …");
                 }
                 Text(g, info, *c->fTiny, RectF(l.opusToggle.X + 60 * s, l.opusToggle.Y + 14 * s, 300 * s, 16 * s), C(color));
             }
-        } else {
+        } else if (c->page == 2) {
             // =========================================================== Seite "Dateien" ===========================================================
             const PlayerSnapshot ps = en.GetPlayer();
             const int  count   = static_cast<int>(ps.items.size());
@@ -1056,14 +1249,14 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
             const float  frac  = c->seekDrag ? c->seekFrac : (dur > 0 ? std::clamp(static_cast<float>(ps.position / dur), 0.0f, 1.0f) : 0.0f);
 
             card(l.filesNow);
-            Text(g, haveCur ? ps.items[ps.current].title : std::wstring(L"Keine Datei ausgewählt"), *c->fTitle, pad(l.filesNow, 16, 8, 756, 30), C(col::text));
+            Text(g, haveCur ? ps.items[ps.current].title : std::wstring(Tr(L"Keine Datei ausgewählt")), *c->fTitle, pad(l.filesNow, 16, 8, 756, 30), C(col::text));
             {
                 std::wstring sub;
                 uint32_t     color = col::sub;
-                if (!ps.message.empty()) { sub = ps.message; color = col::warn; }
-                else if (ps.active) { sub = ps.paused ? L"Pausiert" : L"Spielt – geht durch Equalizer, Lautstärke und Mikrofon"; color = ps.paused ? col::warn : col::ok; }
-                else if (haveCur) sub = L"Gestoppt";
-                else sub = L"Ziehe Audio-Dateien in dieses Fenster oder wähle „Dateien öffnen“";
+                if (!ps.message.empty()) { sub = TrMsg(ps.message); color = col::warn; }
+                else if (ps.active) { sub = ps.paused ? Tr(L"Pausiert") : Tr(L"Spielt – geht durch Equalizer, Lautstärke und Mikrofon"); color = ps.paused ? col::warn : col::ok; }
+                else if (haveCur) sub = Tr(L"Gestoppt");
+                else sub = Tr(L"Ziehe Audio-Dateien in dieses Fenster oder wähle „Dateien öffnen“");
                 Text(g, sub, *c->fSmall, pad(l.filesNow, 16, 38, 756, 18), C(color));
             }
             DrawSlider(g, l.fileSeek, frac, c->drag.hit == Hit::FileSeek || hv.hit == Hit::FileSeek, false, dur <= 0);
@@ -1104,16 +1297,16 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
             glyphBtn(l.btnPlay, ps.active && !ps.paused ? 2 : 1, hv.hit == Hit::FilePlay, true);
             glyphBtn(l.btnStop, 3, hv.hit == Hit::FileStop, false);
             glyphBtn(l.btnNext, 4, hv.hit == Hit::FileNext, false);
-            const wchar_t* rep[3] = {L"Wiederholen: Aus", L"Wiederholen: Alle", L"Wiederholen: Eins"};
+            const wchar_t* rep[3] = {Tr(L"Wiederholen: Aus"), Tr(L"Wiederholen: Alle"), Tr(L"Wiederholen: Eins")};
             DrawButton(g, l.btnRepeat, rep[static_cast<int>(ps.repeat)], *c->fSmall, ps.repeat != RepeatMode::Off, hv.hit == Hit::FileRepeat, s);
-            DrawButton(g, l.btnClear, L"Liste leeren", *c->fSmall, false, hv.hit == Hit::FileClear, s, col::accent, count > 0);
-            DrawButton(g, l.btnOpen, L"Dateien öffnen …", *c->fSmall, false, hv.hit == Hit::FileOpen, s);
+            DrawButton(g, l.btnClear, Tr(L"Liste leeren"), *c->fSmall, false, hv.hit == Hit::FileClear, s, col::accent, count > 0);
+            DrawButton(g, l.btnOpen, Tr(L"Dateien öffnen …"), *c->fSmall, false, hv.hit == Hit::FileOpen, s);
 
             // Wiedergabeliste bzw. Ablageflaeche
             card(l.fileCard);
-            Text(g, L"Wiedergabeliste", *c->fHead, pad(l.fileCard, 16, 8, 240, 28), C(col::text));
-            Text(g, count ? std::to_wstring(count) + (count == 1 ? L" Titel" : L" Titel") : std::wstring(L"leer"), *c->fSmall, pad(l.fileCard, 150, 8, 200, 28), C(col::sub));
-            Text(g, L"Dateien oder ganze Ordner einfach hierher ziehen  ·  mp3, wav, flac, m4a, aac, wma, ogg, opus", *c->fTiny,
+            Text(g, Tr(L"Wiedergabeliste"), *c->fHead, pad(l.fileCard, 16, 8, 240, 28), C(col::text));
+            Text(g, count ? std::to_wstring(count) + (count == 1 ? Tr(L" Titel") : Tr(L" Titel "))  /* zweiter Schluessel mit Leerzeichen: Mehrzahl */ : std::wstring(Tr(L"leer")), *c->fSmall, pad(l.fileCard, 150, 8, 200, 28), C(col::sub));
+            Text(g, Tr(L"Dateien oder ganze Ordner einfach hierher ziehen  ·  mp3, wav, flac, m4a, aac, wma, ogg, opus"), *c->fTiny,
                  RectF(l.fileCard.X + l.fileCard.Width - 12 * s - 520 * s, l.fileCard.Y + 8 * s, 520 * s, 28 * s), C(col::sub, 170), StringAlignmentFar);
             g.SetClip(l.fileArea);
             if (count == 0) {
@@ -1129,8 +1322,8 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                 g.FillRectangle(&acc, ax - 3 * s, ay - 14 * s, 6 * s, 16 * s);
                 PointF head[3] = {PointF(ax - 11 * s, ay), PointF(ax + 11 * s, ay), PointF(ax, ay + 12 * s)};
                 g.FillPolygon(&acc, head, 3);
-                Text(g, L"Audio-Dateien hierher ziehen", *c->fHead, RectF(zone.X, zone.Y + zone.Height / 2 - 4 * s, zone.Width, 26 * s), C(col::text), StringAlignmentCenter);
-                Text(g, L"Sie werden der Reihe nach in dein Mikrofon eingespielt – mit Equalizer, Lautstärke und Mithören.", *c->fSmall,
+                Text(g, Tr(L"Audio-Dateien hierher ziehen"), *c->fHead, RectF(zone.X, zone.Y + zone.Height / 2 - 4 * s, zone.Width, 26 * s), C(col::text), StringAlignmentCenter);
+                Text(g, Tr(L"Sie werden der Reihe nach in dein Mikrofon eingespielt – mit Equalizer, Lautstärke und Mithören."), *c->fSmall,
                      RectF(zone.X, zone.Y + zone.Height / 2 + 24 * s, zone.Width, 20 * s), C(col::sub), StringAlignmentCenter);
             }
             const double animTime = c->tick * (kTimerMs / 1000.0);
@@ -1172,22 +1365,75 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                 StrokeRound(g, t, 8 * s, C(color, a));
                 Text(g, c->toast, *c->fSmall, t, C(col::text, a), StringAlignmentCenter);
             }
+        } else if (c->page == 3) {
+            // =========================================================== Seite "Sounds" ===========================================================
+            card(l.soundCard);
+            Text(g, Tr(L"Soundboard"), *c->fHead, pad(l.soundCard, 16, 8, 300, 26), C(col::text));
+            const bool editingSound = c->edit.active && c->edit.kind == 2;
+            if (editingSound) {
+                DrawEditField(g, c, l.soundEditField, s);
+                DrawButton(g, l.soundEditOk, Tr(L"Umbenennen"), *c->fSmall, true, hv.hit == Hit::SoundEditOk, s, col::ok);
+                DrawButton(g, l.soundEditCancel, Tr(L"Abbrechen"), *c->fSmall, false, hv.hit == Hit::SoundEditCancel, s);
+            } else {
+                TextWrap(g, Tr(L"Ziehe kurze Audio-Dateien (bis 30 s) auf eine Kachel. Klick spielt den Sound, Rechtsklick: Umbenennen, Ersetzen, Entfernen. Tasten legst du über „Hotkeys …“ fest."),
+                         *c->fTiny, pad(l.soundCard, 16, 34, 756, 40), C(col::sub));
+            }
+            const auto sounds = en.GetSounds();
+            for (int i = 0; i < kSoundSlots; ++i) {
+                const RectF&                   t     = l.soundTile[i];
+                const Engine::SoundInfo&       si    = sounds[i];
+                const bool                     hover = hv.hit == Hit::SoundTile && hv.idx == i;
+                const bool                     ready = si.state == Soundboard::State::Ready;
+                const float                    flash = c->soundFlash[i];
+                FillRound(g, t, 12 * s, ready ? (hover ? C(col::cardHover) : C(0xFFFFFF, 12)) : (hover ? C(col::cardHover) : C(0xFFFFFF, 6)));
+                if (flash > 0.01f) FillRound(g, t, 12 * s, C(col::accent, static_cast<BYTE>(110 * flash)));
+                StrokeRound(g, t, 12 * s, ready ? C(col::accent, flash > 0.01f ? 220 : 90) : C(col::border), 1.2f);
+                FillCircle(g, t.X + 22 * s, t.Y + 22 * s, 12 * s, ready ? C(col::accent, 90) : C(col::track));
+                Text(g, std::to_wstring(i + 1), *c->fSmall, RectF(t.X + 10 * s, t.Y + 10 * s, 24 * s, 24 * s), C(col::text), StringAlignmentCenter);
+                if (ready) {
+                    const float cx = t.X + t.Width / 2, cy = t.Y + 56 * s; // Play-Dreieck
+                    PointF      tri[3] = {PointF(cx - 9 * s, cy - 13 * s), PointF(cx - 9 * s, cy + 13 * s), PointF(cx + 14 * s, cy)};
+                    SolidBrush  b(C(col::accent));
+                    g.FillPolygon(&b, tri, 3);
+                    Text(g, si.name, *c->fBody, RectF(t.X + 8 * s, t.Y + 92 * s, t.Width - 16 * s, 24 * s), C(col::text), StringAlignmentCenter);
+                    Text(g, playlist::FormatTime(si.seconds), *c->fTiny, RectF(t.X + 8 * s, t.Y + 118 * s, t.Width - 16 * s, 20 * s), C(col::sub), StringAlignmentCenter);
+                } else if (si.state == Soundboard::State::Loading) {
+                    Text(g, Tr(L"Lädt …"), *c->fBody, RectF(t.X, t.Y + 50 * s, t.Width, 30 * s), C(col::sub), StringAlignmentCenter);
+                } else if (si.state == Soundboard::State::Failed) {
+                    Text(g, Tr(L"Nicht lesbar"), *c->fBody, RectF(t.X, t.Y + 44 * s, t.Width, 24 * s), C(col::bad), StringAlignmentCenter);
+                    Text(g, si.name, *c->fTiny, RectF(t.X + 8 * s, t.Y + 72 * s, t.Width - 16 * s, 20 * s), C(col::sub), StringAlignmentCenter);
+                    Text(g, Tr(L"Klick: andere Datei wählen"), *c->fTiny, RectF(t.X + 8 * s, t.Y + 118 * s, t.Width - 16 * s, 20 * s), C(col::sub, 170), StringAlignmentCenter);
+                } else {
+                    Text(g, L"+", *c->fTitle, RectF(t.X, t.Y + 36 * s, t.Width, 40 * s), C(col::sub), StringAlignmentCenter);
+                    Text(g, Tr(L"Leer – Datei hierher ziehen"), *c->fTiny, RectF(t.X + 8 * s, t.Y + 92 * s, t.Width - 16 * s, 20 * s), C(col::sub, 190), StringAlignmentCenter);
+                    Text(g, Tr(L"oder klicken"), *c->fTiny, RectF(t.X + 8 * s, t.Y + 112 * s, t.Width - 16 * s, 20 * s), C(col::sub, 140), StringAlignmentCenter);
+                }
+            }
+            Text(g, Tr(L"Sound-Lautstärke"), *c->fBody, RectF(l.soundVol.X, l.soundVol.Y - 24 * s, 250 * s, 22 * s), C(col::text));
+            Text(g, std::to_wstring(st.soundVolPct) + L" %", *c->fBody, RectF(l.soundVol.X + l.soundVol.Width - 80 * s, l.soundVol.Y - 24 * s, 80 * s, 22 * s), C(col::sub), StringAlignmentFar);
+            DrawSlider(g, l.soundVol, st.soundVolPct / 200.0f, c->drag.hit == Hit::SoundVol || hv.hit == Hit::SoundVol, true);
+            DrawButton(g, l.soundStop, Tr(L"Alle stoppen"), *c->fSmall, false, hv.hit == Hit::SoundStop, s, col::bad);
         }
 
         // --- Diagnose ---------------------------------------------------------------------
-        {
+        if ((c->page == 0 || c->page == 3) && c->toastTicks > 0) { // Rueckmeldung (Profile, Sounds) in der Fusszeile
+            RectF d = l.diag;
+            d.Width = (kW - 40) * s;
+            const BYTE a = static_cast<BYTE>(255 * std::min(1.0f, c->toastTicks / 12.0f));
+            Text(g, c->toast, *c->fSmall, d, C(c->toastBad ? col::bad : col::ok, a));
+        } else {
             RectF d = l.diag;
             if (c->page != 1) d.Width = (kW - 40) * s; // der Platz fuer den Kanal-Codec wird nur auf der Equalizer-Seite gebraucht
-            Text(g, en.Diagnostics(), *c->fSmall, d, C(col::sub, 170));
+            Text(g, TrDiag(en.Diagnostics()), *c->fSmall, d, C(col::sub, 170));
         }
         if (c->page == 1) { // Kanal-Codec: "Opus Voice" ist mono und sprachoptimiert -> fuer Musik ungeeignet
             const std::wstring codec = en.CodecInfo();
             if (!codec.empty())
-                Text(g, L"Kanal-Codec: " + codec + (en.CodecIsVoice() ? L"  –  für Musik besser „Opus Music“" : L""), *c->fSmall, l.codec,
+                Text(g, std::wstring(Tr(L"Kanal-Codec: ")) + TrCodec(codec) + (en.CodecIsVoice() ? Tr(L"  –  für Musik besser „Opus Music“") : L""), *c->fSmall, l.codec,
                      en.CodecIsVoice() ? C(col::warn) : C(col::sub, 200), StringAlignmentFar);
         }
 
-        if (c->page == 0 && c->menu.open) { // Rechtsklick-Menue
+        if ((c->page == 0 || c->page == 3) && c->menu.open) { // Rechtsklick-Menue
             const MenuState& m  = c->menu;
             const RectF      mr = MenuRect(l, m);
             FillRound(g, RectF(mr.X + 2 * s, mr.Y + 4 * s, mr.Width, mr.Height), 10 * s, C(0x000000, 90));
@@ -1231,7 +1477,7 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                         if (sel) FillRound(g, rr, 7 * s, C(col::accent, 60));
                         else if (hov) FillRound(g, rr, 7 * s, C(col::cardHover));
                         if (user) FillCircle(g, rr.X + 12 * s, rr.Y + rr.Height / 2, 3 * s, C(col::accent));
-                        Text(g, rows[i].label, *c->fBody, RectF(rr.X + 24 * s, rr.Y, rr.Width - 52 * s, rr.Height), C(col::text));
+                        Text(g, user ? rows[i].label : Tr(rows[i].label), *c->fBody, RectF(rr.X + 24 * s, rr.Y, rr.Width - 52 * s, rr.Height), C(col::text));
                         if (sel) { // Haken
                             Pen         ck(C(col::accent), std::max(1.6f, 1.8f * s));
                             const float cx = rr.X + rr.Width - 18 * s, cy = rr.Y + rr.Height / 2;
@@ -1287,6 +1533,9 @@ void UpdateAnim(Ctx* c)
     ease(c->anim[A_MUSIC], st.musicMode ? 1.0f : 0.0f);
     ease(c->anim[A_OPT], st.optimizeForOpus ? 1.0f : 0.0f);
     ease(c->anim[A_OPUS], st.opusPreview ? 1.0f : 0.0f);
+    ease(c->anim[A_NOWCHAT], st.nowPlayingChat ? 1.0f : 0.0f);
+    ease(c->anim[A_NOWCHANNEL], st.nowPlayingChannel ? 1.0f : 0.0f);
+    ease(c->anim[A_NOWMETA], st.nowPlayingMeta ? 1.0f : 0.0f);
     ease(c->anim[A_LISTEN], Engine::Get().IsPreviewLatched() ? 1.0f : 0.0f);
 
     float l = 0, r = 0;
@@ -1349,6 +1598,17 @@ void Dwm(HWND hwnd)
     }
 }
 
+void (*g_hotkeySetup)() = nullptr; // vom Plugin: oeffnet die Hotkey-Einstellungen von TeamSpeak
+
+// Ersetzt das erste "%s" im (uebersetzten) Text
+std::wstring Fmt1(const std::wstring& pattern, const std::wstring& arg)
+{
+    std::wstring out        = pattern;
+    const size_t pos        = out.find(L"%s");
+    if (pos != std::wstring::npos) out.replace(pos, 2, arg);
+    return out;
+}
+
 void ShowToast(Ctx* c, const std::wstring& text, bool bad)
 {
     c->toast      = text;
@@ -1357,13 +1617,15 @@ void ShowToast(Ctx* c, const std::wstring& text, bool bad)
 }
 
 // Namenseingabe starten (Speichern oder Umbenennen). Vorbelegung ist komplett markiert: erstes Zeichen ersetzt sie.
-void StartEdit(Ctx* c, bool rename, const std::wstring& initial)
+void StartEdit(Ctx* c, bool rename, const std::wstring& initial, int kind = 0, int slot = -1)
 {
     c->edit.active    = true;
     c->edit.rename    = rename;
     c->edit.selectAll = true;
     c->edit.text      = initial;
     c->edit.original  = initial;
+    c->edit.kind      = kind;
+    c->edit.slot      = slot;
     c->presetOpen     = false;
     c->deleteArm      = 0;
 }
@@ -1373,6 +1635,36 @@ void CancelEdit(Ctx* c) { c->edit = {}; }
 void CommitEdit(Ctx* c)
 {
     Engine&            en   = Engine::Get();
+    if (c->edit.kind == 2) { // Name eines Sounds
+        const std::wstring name = presets::Sanitize(c->edit.text);
+        if (name.empty()) {
+            ShowToast(c, Tr(L"Bitte einen Namen eingeben"), true);
+            return;
+        }
+        en.SoundRename(c->edit.slot, name);
+        ShowToast(c, Fmt1(Tr(L"Umbenannt in „%s“"), name), false);
+        CancelEdit(c);
+        return;
+    }
+    if (c->edit.kind == 1) { // Profil speichern bzw. umbenennen
+        const std::wstring name     = presets::Sanitize(c->edit.text);
+        const std::wstring was      = c->edit.original;
+        const bool         isRename = c->edit.rename;
+        const bool         existed  = !isRename && en.GetSettings().profiles.Find(name) != nullptr;
+        const PresetResult r        = isRename ? en.RenameProfile(was, name) : en.SaveProfile(name);
+        switch (r) {
+        case PresetResult::Ok:
+        case PresetResult::Updated:
+            ShowToast(c, isRename ? Fmt1(Tr(L"Umbenannt in „%s“"), name) : Fmt1(existed ? Tr(L"Profil „%s“ aktualisiert") : Tr(L"Profil „%s“ gespeichert"), name), false);
+            CancelEdit(c);
+            break;
+        case PresetResult::Empty: ShowToast(c, Tr(L"Bitte einen Namen eingeben"), true); break;
+        case PresetResult::Exists: ShowToast(c, Fmt1(Tr(L"Ein Profil „%s“ gibt es schon"), name), true); break;
+        case PresetResult::Full: ShowToast(c, Tr(L"Maximal 30 Profile"), true); break;
+        default: ShowToast(c, Tr(L"Das hat nicht geklappt"), true); break;
+        }
+        return;
+    }
     const std::wstring name = presets::Sanitize(c->edit.text);
     const std::wstring was  = c->edit.original;
     const bool         isRename = c->edit.rename;
@@ -1381,14 +1673,14 @@ void CommitEdit(Ctx* c)
     switch (r) {
     case PresetResult::Ok:
     case PresetResult::Updated:
-        ShowToast(c, isRename ? L"Umbenannt in „" + name + L"“" : (existed ? L"Filter „" + name + L"“ aktualisiert" : L"Filter „" + name + L"“ gespeichert"), false);
+        ShowToast(c, isRename ? Fmt1(Tr(L"Umbenannt in „%s“"), name) : Fmt1(existed ? Tr(L"Filter „%s“ aktualisiert") : Tr(L"Filter „%s“ gespeichert"), name), false);
         CancelEdit(c);
         break;
-    case PresetResult::Empty: ShowToast(c, L"Bitte einen Namen eingeben", true); break;
-    case PresetResult::Reserved: ShowToast(c, L"„" + name + L"“ ist ein mitgelieferter Name", true); break;
-    case PresetResult::Exists: ShowToast(c, L"Einen Filter „" + name + L"“ gibt es schon", true); break;
-    case PresetResult::Full: ShowToast(c, L"Maximal 50 eigene Filter", true); break;
-    default: ShowToast(c, L"Das hat nicht geklappt", true); break;
+    case PresetResult::Empty: ShowToast(c, Tr(L"Bitte einen Namen eingeben"), true); break;
+    case PresetResult::Reserved: ShowToast(c, Fmt1(Tr(L"„%s“ ist ein mitgelieferter Name"), name), true); break;
+    case PresetResult::Exists: ShowToast(c, Fmt1(Tr(L"Einen Filter „%s“ gibt es schon"), name), true); break;
+    case PresetResult::Full: ShowToast(c, Tr(L"Maximal 50 eigene Filter"), true); break;
+    default: ShowToast(c, Tr(L"Das hat nicht geklappt"), true); break;
     }
 }
 
@@ -1446,15 +1738,87 @@ void AddPaths(Ctx* c, const std::vector<std::wstring>& paths)
     if (added > 0) {
         c->page = 2;
         if (!before.active) en.PlayerPlay(first);
-        ShowToast(c, std::to_wstring(added) + (added == 1 ? L" Datei hinzugefügt" : L" Dateien hinzugefügt"), false);
+        ShowToast(c, std::to_wstring(added) + (added == 1 ? Tr(L" Datei hinzugefügt") : Tr(L" Dateien hinzugefügt")), false);
     } else {
         c->page = 2;
-        ShowToast(c, paths.empty() ? L"Keine Datei erkannt" : (static_cast<int>(before.items.size()) >= static_cast<int>(playlist::Playlist::kMax) ? L"Die Liste ist voll" : L"Keine Audio-Datei erkannt (mp3, wav, flac, m4a, ogg …)"), true);
+        ShowToast(c, paths.empty() ? Tr(L"Keine Datei erkannt") : (static_cast<int>(before.items.size()) >= static_cast<int>(playlist::Playlist::kMax) ? Tr(L"Die Liste ist voll") : Tr(L"Keine Audio-Datei erkannt (mp3, wav, flac, m4a, ogg …)")), true);
     }
+}
+
+// Filter fuer die Datei-Dialoge ("Audio-Dateien\0*.mp3;...\0Alle Dateien\0*.*\0\0")
+std::wstring AudioFilter()
+{
+    std::wstring f = Tr(L"Audio-Dateien");
+    f.push_back(L'\0');
+    f += L"*.mp3;*.wav;*.flac;*.m4a;*.aac;*.wma;*.ogg;*.oga;*.opus;*.mp4;*.mka;*.aiff;*.aif;*.webm;*.mp2;*.wv;*.ac3";
+    f.push_back(L'\0');
+    f += Tr(L"Alle Dateien");
+    f.push_back(L'\0');
+    f += L"*.*";
+    f.push_back(L'\0');
+    return f;
+}
+
+// Dateien den Sound-Slots zuweisen: die erste auf `preferredSlot` (falls >= 0), alle weiteren auf freie Plaetze
+void AssignSounds(Ctx* c, const std::vector<std::wstring>& paths, int preferredSlot)
+{
+    Engine&           en     = Engine::Get();
+    auto              sounds = en.GetSounds();
+    std::vector<bool> used(kSoundSlots, false);
+    int               assigned = 0;
+    bool              noRoom   = false;
+    for (const auto& path : paths) {
+        if (!playlist::IsAudioFile(path)) continue;
+        int target = -1;
+        if (assigned == 0 && preferredSlot >= 0) {
+            target = preferredSlot;
+        } else {
+            for (int i = 0; i < kSoundSlots; ++i)
+                if (!used[i] && sounds[i].path.empty()) {
+                    target = i;
+                    break;
+                }
+        }
+        if (target < 0) {
+            noRoom = true;
+            break;
+        }
+        en.SoundSetSlot(target, path);
+        used[target]         = true;
+        sounds[target].path = path;
+        ++assigned;
+    }
+    c->presetOpen = false;
+    c->menu.open  = false;
+    c->page       = 3;
+    if (assigned > 0)
+        ShowToast(c, std::to_wstring(assigned) + (assigned == 1 ? Tr(L" Sound zugewiesen") : Tr(L" Sounds zugewiesen")) + (noRoom ? Tr(L" (alle Plätze belegt)") : L""), false);
+    else
+        ShowToast(c, noRoom ? Tr(L"Alle 8 Plätze sind belegt") : Tr(L"Keine Audio-Datei erkannt"), true);
+}
+
+// Eine Datei fuer einen Sound-Slot waehlen
+void PickSoundFile(Ctx* c, int slot)
+{
+    std::vector<wchar_t> buf(4096, L'\0');
+    const std::wstring   filter = AudioFilter();
+    const std::wstring   title  = Tr(L"Sound-Datei auswählen");
+    OPENFILENAMEW        ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = c->hwnd;
+    ofn.lpstrFile   = buf.data();
+    ofn.nMaxFile    = static_cast<DWORD>(buf.size());
+    ofn.lpstrTitle  = title.c_str();
+    ofn.lpstrFilter = filter.c_str();
+    ofn.Flags       = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetOpenFileNameW(&ofn)) return;
+    AssignSounds(c, {std::wstring(buf.data())}, slot);
 }
 
 void OnDropFiles(Ctx* c, HDROP drop)
 {
+    POINT pt{0, 0};
+    DragQueryPoint(drop, &pt);
     std::vector<std::wstring> paths;
     const UINT                n = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
     for (UINT i = 0; i < n; ++i) {
@@ -1465,6 +1829,13 @@ void OnDropFiles(Ctx* c, HDROP drop)
         else paths.push_back(buf);
     }
     DragFinish(drop);
+    if (c->page == 3) { // Seite "Sounds": auf eine Kachel gezogen = dieser Slot, sonst freie Plaetze
+        int slot = -1;
+        for (int i = 0; i < kSoundSlots; ++i)
+            if (In(c->lay.soundTile[i], pt.x, pt.y)) slot = i;
+        AssignSounds(c, paths, slot);
+        return;
+    }
     AddPaths(c, paths);
 }
 
@@ -1476,8 +1847,10 @@ void OpenFilesDialog(Ctx* c)
     ofn.hwndOwner   = c->hwnd;
     ofn.lpstrFile   = buf.data();
     ofn.nMaxFile    = static_cast<DWORD>(buf.size());
-    ofn.lpstrTitle  = L"Audio-Dateien auswählen";
-    ofn.lpstrFilter = L"Audio-Dateien\0*.mp3;*.wav;*.flac;*.m4a;*.aac;*.wma;*.ogg;*.oga;*.opus;*.mp4;*.mka;*.aiff;*.aif;*.webm;*.mp2;*.wv;*.ac3\0Alle Dateien\0*.*\0";
+    const std::wstring title  = Tr(L"Audio-Dateien auswählen");
+    const std::wstring filter = AudioFilter();
+    ofn.lpstrTitle  = title.c_str();
+    ofn.lpstrFilter = filter.c_str();
     ofn.Flags       = OFN_EXPLORER | OFN_ALLOWMULTISELECT | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
     if (!GetOpenFileNameW(&ofn)) return;
     std::vector<std::wstring> paths;
@@ -1525,7 +1898,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         const Settings st = Engine::Get().GetSettings();
         c->anim[A_MAIN] = st.enabled, c->anim[A_ALWAYS] = st.alwaysSend, c->anim[A_MONITOR] = st.monitor, c->anim[A_EQ] = st.eqEnabled, c->anim[A_MONO] = st.mono, c->anim[A_MUSIC] = st.musicMode,
-        c->anim[A_OPT] = st.optimizeForOpus, c->anim[A_OPUS] = st.opusPreview;
+        c->anim[A_OPT] = st.optimizeForOpus, c->anim[A_OPUS] = st.opusPreview,
+        c->anim[A_NOWCHAT] = st.nowPlayingChat, c->anim[A_NOWCHANNEL] = st.nowPlayingChannel, c->anim[A_NOWMETA] = st.nowPlayingMeta;
         Dwm(hwnd);
         DragAcceptFiles(hwnd, TRUE); // Audio-Dateien per Drag & Drop (auch wenn TeamSpeak mit anderen Rechten laeuft als der Explorer)
         if (HMODULE user = GetModuleHandleW(L"user32.dll")) {
@@ -1556,6 +1930,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             AnimateTiles(c);
             if (c->deleteArm > 0) --c->deleteArm;
             if (c->toastTicks > 0) --c->toastTicks;
+            for (float& f : c->soundFlash) f = std::max(0.0f, f - 0.12f);
             if (++c->tick % kRefreshTicks == 0) StartRefresh(c);
             InvalidateRect(hwnd, nullptr, FALSE);
         }
@@ -1579,6 +1954,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         else if (c->drag.hit == Hit::SliderMic) en.SetMicVolume(SliderValue(c->lay.sliderMic, x, 200));
         else if (c->drag.hit == Hit::SliderDelay) en.SetMonitorDelay(SliderValue(c->lay.sliderDelay, x, kMaxDelayMs));
         else if (c->drag.hit == Hit::SliderGate) en.SetGateDb(-70 + SliderValue(c->lay.sliderGate, x, 45, 1));
+        else if (c->drag.hit == Hit::SoundVol) en.SetSoundVolume(SliderValue(c->lay.soundVol, x, 200));
         else if (c->drag.hit == Hit::EqPlot) PaintEq(c, x, y);
         else if (c->drag.hit == Hit::FileSeek) c->seekFrac = SeekFrac(c->lay.fileSeek, x);
         c->hover = HitTest(c, x, y);
@@ -1602,7 +1978,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         const HitInfo h  = HitTest(c, x, y);
         Engine&       en = Engine::Get();
         const Settings st = en.GetSettings();
-        if (c->deleteArm > 0 && h.hit != Hit::PresetDelete) c->deleteArm = 0; // "Wirklich loeschen?" verfaellt bei jedem anderen Klick
+        if (c->deleteArm > 0 && h.hit != Hit::PresetDelete && h.hit != Hit::ProfDelete) c->deleteArm = 0; // "Wirklich loeschen?" verfaellt bei jedem anderen Klick
         if (c->menu.open) { // Rechtsklick-Menue offen: Eintrag ausfuehren oder schliessen; der Klick geht nie "durch"
             const MenuState m = c->menu;
             c->menu.open      = false;
@@ -1614,6 +1990,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 } else if (e.action == 2) {
                     en.ShowAllApps();
                     StartRefresh(c); // sofort neu laden, damit die Apps gleich wieder auftauchen
+                } else if (e.action == 3) { // Sound entfernen
+                    en.SoundSetSlot(std::stoi(e.arg), L"");
+                } else if (e.action == 4) { // Sound umbenennen
+                    const int slot = std::stoi(e.arg);
+                    StartEdit(c, true, en.GetSounds()[slot].name, 2, slot);
+                } else if (e.action == 5) { // Datei waehlen bzw. ersetzen
+                    PickSoundFile(c, std::stoi(e.arg));
                 }
             }
             return 0;
@@ -1625,7 +2008,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 else if (static_cast<size_t>(h.idx - 100) < st.userPresets.items.size()) en.ApplyUserPreset(st.userPresets.items[h.idx - 100].name);
                 return 0;
             }
-            if (h.hit != Hit::TabMix && h.hit != Hit::TabEq && h.hit != Hit::TabFiles) return 0;
+            if (h.hit != Hit::TabMix && h.hit != Hit::TabEq && h.hit != Hit::TabFiles && h.hit != Hit::TabSounds) return 0;
         }
         switch (h.hit) {
         case Hit::MicMute: en.SetMicMuted(!en.IsMicMuted()); break;
@@ -1651,10 +2034,79 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         case Hit::TabMix:
         case Hit::TabEq:
         case Hit::TabFiles:
-            c->page = (h.hit == Hit::TabMix) ? 0 : (h.hit == Hit::TabEq ? 1 : 2);
+        case Hit::TabSounds: {
+            const int newPage = (h.hit == Hit::TabMix) ? 0 : (h.hit == Hit::TabEq ? 1 : (h.hit == Hit::TabFiles ? 2 : 3));
+            if (newPage != c->page) CancelEdit(c); // eine begonnene Namenseingabe gehoert zur Seite
+            c->page       = newPage;
             c->presetOpen = false;
             c->deleteArm  = 0;
             break;
+        }
+        case Hit::LangDe: en.SetLanguage(1); break;
+        case Hit::LangEn: en.SetLanguage(2); break;
+        case Hit::HotkeyBtn:
+            if (g_hotkeySetup) g_hotkeySetup();
+            else ShowToast(c, Tr(L"Hotkeys: TeamSpeak → Einstellungen → Hotkeys → Plugins"), false);
+            break;
+        case Hit::NowChat: en.SetNowPlayingChat(!st.nowPlayingChat); break;
+        case Hit::NowChannel: en.SetNowPlayingChannel(!st.nowPlayingChannel); break;
+        case Hit::NowMeta: en.SetNowPlayingMeta(!st.nowPlayingMeta); break;
+        case Hit::ProfPrev:
+        case Hit::ProfNext: {
+            const auto names = en.ProfileNames();
+            if (names.empty()) {
+                ShowToast(c, Tr(L"Noch keine Profile – speichere zuerst eines mit „Speichern als …“"), true);
+                break;
+            }
+            const int n = static_cast<int>(names.size());
+            int       cur = -1;
+            for (int i = 0; i < n; ++i)
+                if (presets::EqualNoCase(names[i], st.profileName)) cur = i;
+            const int next = h.hit == Hit::ProfNext ? (cur + 1) % n : (cur < 0 ? n - 1 : (cur + n - 1) % n);
+            en.ApplyProfile(names[next]);
+            break;
+        }
+        case Hit::ProfField: break;
+        case Hit::ProfSave:
+            if (c->edit.active && c->edit.kind == 1) CommitEdit(c);
+            else StartEdit(c, false, st.profiles.Find(st.profileName) ? st.profileName : st.profiles.SuggestName(), 1); // ein gewaehltes Profil wird so aktualisiert
+            break;
+        case Hit::ProfRename:
+            if (c->edit.active && c->edit.kind == 1) CancelEdit(c);
+            else if (st.profiles.Find(st.profileName)) StartEdit(c, true, st.profileName, 1);
+            break;
+        case Hit::ProfDelete: {
+            const Profile* pr = st.profiles.Find(st.profileName);
+            if (!pr) break;
+            if (c->deleteArm > 0) { // zweiter Klick: wirklich loeschen
+                const std::wstring name = pr->name;
+                en.DeleteProfile(name);
+                ShowToast(c, Fmt1(Tr(L"Profil „%s“ gelöscht"), name), false);
+                c->deleteArm = 0;
+            } else {
+                c->deleteArm = 90;
+            }
+            break;
+        }
+        case Hit::SoundTile: {
+            if (h.idx < 0 || h.idx >= kSoundSlots || c->edit.active) break; // beim Umbenennen nicht abspielen
+            const auto state = en.GetSounds()[h.idx].state;
+            if (state == Soundboard::State::Ready) {
+                en.SoundPlay(h.idx);
+                c->soundFlash[h.idx] = 1.0f;
+            } else if (state != Soundboard::State::Loading) {
+                PickSoundFile(c, h.idx); // leer oder nicht lesbar: Datei waehlen
+            }
+            break;
+        }
+        case Hit::SoundVol:
+            c->drag = h;
+            SetCapture(hwnd);
+            en.SetSoundVolume(SliderValue(c->lay.soundVol, x, 200));
+            break;
+        case Hit::SoundStop: en.SoundStop(); break;
+        case Hit::SoundEditOk: CommitEdit(c); break;
+        case Hit::SoundEditCancel: CancelEdit(c); break;
         case Hit::PresetField:
             if (!c->edit.active) {
                 c->presetOpen   = true;
@@ -1680,7 +2132,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if (!cur.user) break;
             if (c->deleteArm > 0) { // zweiter Klick: wirklich loeschen
                 en.DeleteEqPreset(cur.label);
-                ShowToast(c, L"Filter „" + cur.label + L"“ gelöscht", false);
+                ShowToast(c, Fmt1(Tr(L"Filter „%s“ gelöscht"), cur.label), false);
                 c->deleteArm = 0;
             } else {
                 c->deleteArm = 90;
@@ -1756,16 +2208,34 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             const int      x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
             const HitInfo  h = HitTest(c, x, y);
             const Settings st = Engine::Get().GetSettings();
-            const std::wstring showAll = L"Alle Apps einblenden (" + std::to_wstring(st.hiddenApps.size()) + L")";
+            const std::wstring showAll = Fmt1(Tr(L"Alle Apps einblenden (%s)"), std::to_wstring(st.hiddenApps.size()));
             if (h.hit == Hit::Tile) {
                 const AppInfo& a = c->tiles[h.idx].info;
-                if (a.exe == st.targetExe) c->menu.items.assign(1, MenuEntry{L"Aktive Quelle – nicht ausblendbar", 0, false, L""});
-                else c->menu.items.assign(1, MenuEntry{L"„" + PrettyExeName(a.exe) + L"“ ausblenden", 1, true, a.exe});
+                if (a.exe == st.targetExe) c->menu.items.assign(1, MenuEntry{Tr(L"Aktive Quelle – nicht ausblendbar"), 0, false, L""});
+                else c->menu.items.assign(1, MenuEntry{Fmt1(Tr(L"„%s“ ausblenden"), PrettyExeName(a.exe)), 1, true, a.exe});
                 if (!st.hiddenApps.empty()) c->menu.items.push_back(MenuEntry{showAll, 2, true, L""});
             } else if (h.hit == Hit::Grid) {
-                c->menu.items.assign(1, MenuEntry{st.hiddenApps.empty() ? L"Keine Apps ausgeblendet" : showAll, 2, !st.hiddenApps.empty(), L""});
+                c->menu.items.assign(1, MenuEntry{st.hiddenApps.empty() ? Tr(L"Keine Apps ausgeblendet") : showAll, 2, !st.hiddenApps.empty(), L""});
             } else {
                 return 0;
+            }
+            c->menu.open = true;
+            c->menu.x    = static_cast<float>(x);
+            c->menu.y    = static_cast<float>(y);
+        } else if (c && c->page == 3) { // Rechtsklick auf eine Sound-Kachel: Umbenennen / Ersetzen / Entfernen
+            c->menu.open  = false;
+            const int     x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
+            const HitInfo h = HitTest(c, x, y);
+            if (h.hit != Hit::SoundTile || c->edit.active) return 0;
+            const auto         info = Engine::Get().GetSounds()[h.idx];
+            const std::wstring arg  = std::to_wstring(h.idx);
+            c->menu.items.clear();
+            if (info.path.empty()) {
+                c->menu.items.push_back(MenuEntry{Tr(L"Datei auswählen …"), 5, true, arg});
+            } else {
+                c->menu.items.push_back(MenuEntry{Tr(L"Umbenennen"), 4, info.state != Soundboard::State::Loading, arg});
+                c->menu.items.push_back(MenuEntry{Tr(L"Datei ersetzen …"), 5, true, arg});
+                c->menu.items.push_back(MenuEntry{Tr(L"Entfernen"), 3, true, arg});
             }
             c->menu.open = true;
             c->menu.x    = static_cast<float>(x);
@@ -1903,6 +2373,8 @@ void DialogThread()
 }
 
 } // namespace
+
+void SetHotkeySetupHandler(void (*fn)()) { g_hotkeySetup = fn; }
 
 void OpenConfigDialog()
 {

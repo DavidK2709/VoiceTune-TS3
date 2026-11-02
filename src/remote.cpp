@@ -4,6 +4,8 @@
 #include <atomic>
 #include <string>
 #include <thread>
+#include <vector>
+#include "commands.h"
 #include "engine.h"
 #include "remote.h"
 
@@ -33,6 +35,12 @@ std::string Reply(int code, const char* text, const std::string& body) {
            "\r\nConnection: close\r\n\r\n" + body;
 }
 
+std::string JsonStrArray(const std::vector<std::wstring>& v) {
+    std::string o = "[";
+    for (size_t i = 0; i < v.size(); ++i) o += (i ? ",\"" : "\"") + JsonEsc(WideToUtf8(v[i])) + "\"";
+    return o + "]";
+}
+
 std::string StateJson() {
     Engine&        e = Engine::Get();
     Settings       s = e.GetSettings();
@@ -42,26 +50,32 @@ std::string StateJson() {
            ",\"musicVol\":" + std::to_string(s.musicVolPct) +
            ",\"micVol\":" + std::to_string(s.micVolPct) +
            ",\"playing\":" + ((p.active && !p.paused) ? "true" : "false") +
+           ",\"monitor\":" + (s.monitor ? "true" : "false") +
+           ",\"profile\":\"" + JsonEsc(WideToUtf8(s.profileName)) + "\"" +
+           ",\"preset\":\"" + JsonEsc(WideToUtf8(s.eqPresetName)) + "\"" +
            ",\"source\":\"" + JsonEsc(WideToUtf8(e.SourceLabel())) + "\"}";
 }
 
-bool RunCommand(const std::string& c) {
-    Engine&  e = Engine::Get();
-    Settings s = e.GetSettings();
-    if (c == "toggle")        e.SetEnabled(!s.enabled);
-    else if (c == "on")       e.SetEnabled(true);
-    else if (c == "off")      e.SetEnabled(false);
-    else if (c == "micmute")  e.SetMicMuted(!e.IsMicMuted());
-    else if (c == "musicvol_up")   e.SetMusicVolume(std::min(200, s.musicVolPct + 10));
-    else if (c == "musicvol_down") e.SetMusicVolume(std::max(0, s.musicVolPct - 10));
-    else if (c == "next")     e.PlayerNext();
-    else if (c == "prev")     e.PlayerPrev();
-    else if (c == "stop")     e.PlayerStop();
-    else if (c == "playpause") {
-        if (e.GetPlayer().active) e.PlayerTogglePause(); else e.PlayerPlay(-1);
-    }
-    else return false;
-    return true;
+// Namen aller EQ-Presets (mitgelieferte zuerst, dann eigene)
+std::string PresetsJson() {
+    std::vector<std::wstring> names;
+    for (int i = 0; i < eq::kPresetCount; ++i) names.push_back(eq::PresetName(i));
+    const Settings s = Engine::Get().GetSettings();
+    for (const auto& p : s.userPresets.items) names.push_back(p.name);
+    return "{\"presets\":" + JsonStrArray(names) + ",\"current\":\"" + JsonEsc(WideToUtf8(s.eqPresetName)) + "\"}";
+}
+
+std::string ProfilesJson() {
+    return "{\"profiles\":" + JsonStrArray(Engine::Get().ProfileNames()) + ",\"current\":\"" + JsonEsc(WideToUtf8(Engine::Get().GetSettings().profileName)) + "\"}";
+}
+
+std::string SoundsJson() {
+    const auto  sounds = Engine::Get().GetSounds();
+    std::string o      = "{\"sounds\":[";
+    for (size_t i = 0; i < sounds.size(); ++i)
+        o += std::string(i ? "," : "") + "{\"slot\":" + std::to_string(i + 1) + ",\"name\":\"" + JsonEsc(WideToUtf8(sounds[i].name)) + "\",\"ready\":" +
+             (sounds[i].state == Soundboard::State::Ready ? "true" : "false") + "}";
+    return o + "]}";
 }
 
 std::string Handle(const std::string& req) {
@@ -70,13 +84,16 @@ std::string Handle(const std::string& req) {
     const std::string method = req.substr(0, sp1), path = req.substr(sp1 + 1, sp2 - sp1 - 1);
 
     if (method == "GET" && path == "/state") return Reply(200, "OK", StateJson());
+    if (method == "GET" && path == "/presets") return Reply(200, "OK", PresetsJson());
+    if (method == "GET" && path == "/profiles") return Reply(200, "OK", ProfilesJson());
+    if (method == "GET" && path == "/sounds") return Reply(200, "OK", SoundsJson());
 
     if (method == "POST" && path.rfind("/cmd/", 0) == 0) {
         // Schutz gegen fremde Webseiten: ein eigener Header loest im Browser einen Preflight aus, den wir nie beantworten
         std::string low = req;
         std::transform(low.begin(), low.end(), low.begin(), [](unsigned char ch) { return (char)tolower(ch); });
         if (low.find("\r\nx-voicetune:") == std::string::npos) return Reply(403, "Forbidden", "{}");
-        if (!RunCommand(path.substr(5))) return Reply(404, "Not Found", "{\"error\":\"unknown command\"}");
+        if (!RunCommandPath(path.substr(5))) return Reply(404, "Not Found", "{\"error\":\"unknown command\"}");
         return Reply(200, "OK", StateJson());
     }
     return Reply(404, "Not Found", "{}");
@@ -102,19 +119,29 @@ void Serve() {
         closesocket(c);
     }
 }
+
+// Schnittstelle kann nicht starten (meist: Port belegt, weil schon ein zweites TeamSpeak mit VoiceTune laeuft): das Plugin zeigt dem Nutzer
+// einen Hinweis im TeamSpeak-Client (Rueckruf, siehe RemoteSetUnavailableCallback).
+void (*g_onUnavailable)(unsigned short) = nullptr;
+
+void NotifyUnavailable(unsigned short port) {
+    if (g_onUnavailable) g_onUnavailable(port);
+}
 } // namespace
+
+void RemoteSetUnavailableCallback(void (*fn)(unsigned short port)) { g_onUnavailable = fn; }
 
 void RemoteStart(unsigned short port) {
     WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) { NotifyUnavailable(port); return; }
     g_listen = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (g_listen == INVALID_SOCKET) return;
+    if (g_listen == INVALID_SOCKET) { NotifyUnavailable(port); return; }
     sockaddr_in a{};
     a.sin_family      = AF_INET;
     a.sin_port        = htons(port);
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // nur localhost, nie von aussen erreichbar
     if (bind(g_listen, (sockaddr*)&a, sizeof a) != 0 || listen(g_listen, 4) != 0) {
-        closesocket(g_listen); g_listen = INVALID_SOCKET; return;
+        closesocket(g_listen); g_listen = INVALID_SOCKET; NotifyUnavailable(port); return;
     }
     g_quit = false;
     g_thread = std::thread(Serve);
