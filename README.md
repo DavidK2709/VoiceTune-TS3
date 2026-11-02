@@ -9,7 +9,7 @@ Voraussetzungen: Windows 10 / 11, TeamSpeak 3 Client 3.6.x (**64-bit**, Plugin-A
 Ab **Windows 10 Version 2004** wird nur die gewählte App aufgenommen. Auf älteren Windows-10-Versionen fällt das Plugin automatisch auf den **Gesamt-Ton** des Standard-Ausgabegeräts zurück
 (die Statuszeile weist darauf hin; TeamSpeak-Stimmen anderer würden dann mitgesendet – am besten mit Kopfhörer-Ausgabe auf ein anderes Gerät oder nur Dateien abspielen). Windows 7/8 werden nicht unterstützt.
 Das Fenster passt sich kleinen Bildschirmen an (z.B. 1366×768).
-Autor: Michael Schulz. Früher hieß das Plugin „App Audio Mixer“; eine vorhandene `appaudiomixer.ini` wird beim ersten Start übernommen.
+Autoren: Dave Swift X Michael Schulz. Früher hieß das Plugin „App Audio Mixer“; eine vorhandene `appaudiomixer.ini` wird beim ersten Start übernommen.
 
 ## Bauen
 MSYS2 (UCRT64) mit `mingw-w64-ucrt-x86_64-gcc`, `-cmake`, `-ninja` und **`mingw-w64-ucrt-x86_64-opus`** (für die Opus-Vorschau; fehlt die Bibliothek, baut das Plugin ohne Vorschau):

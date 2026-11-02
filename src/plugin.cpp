@@ -338,7 +338,7 @@ PluginMenuItem* CreateMenuItem(PluginMenuType type, int id, const char* text, co
 EXPORT const char* ts3plugin_name() { return "VoiceTune"; }
 EXPORT const char* ts3plugin_version() { return "2.0"; }
 EXPORT int         ts3plugin_apiVersion() { return PLUGIN_API_VERSION; }
-EXPORT const char* ts3plugin_author() { return "Michael Schulz"; }
+EXPORT const char* ts3plugin_author() { return "Dave Swift X Michael Schulz"; }
 EXPORT const char* ts3plugin_description()
 {
     return "VoiceTune – Your Sound. Your Voice. Your Way. Your Tune!\n\n"

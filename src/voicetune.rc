@@ -16,7 +16,7 @@ BEGIN
     BEGIN
         BLOCK "040704b0"
         BEGIN
-            VALUE "CompanyName",      "Michael Schulz\0"
+            VALUE "CompanyName",      "Dave Swift X Michael Schulz\0"
             VALUE "FileDescription",  "VoiceTune - TeamSpeak 3 Plugin\0"
             VALUE "FileVersion",      "2.0\0"
             VALUE "InternalName",     "VoiceTune\0"

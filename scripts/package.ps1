@@ -12,7 +12,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $ini = @"
 Name = VoiceTune
 Type = Plugin
-Author = Michael Schulz
+Author = Dave Swift X Michael Schulz
 Version = 2.0
 Platforms = win64
 Description = VoiceTune: Your Sound. Your Voice. Your Way. Your Tune! Spielt den Ton einer beliebigen App (Spotify, YouTube ...) oder eigener Audio-Dateien in dein TeamSpeak-Mikrofon - mit Equalizer, Mithoeren, Musikmodus, Opus-Vorschau und Datei-Player.
