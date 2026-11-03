@@ -112,6 +112,7 @@ bool RunCommand(const std::string& name, const std::string& arg)
         e.SoundPlay(n - 1);
     }
     else if (name == "soundstop") e.SoundStop();
+    else if (name == "soundmonitor") e.SetSoundMonitor(!s.soundMonitor);
     else return false;
     return true;
 }

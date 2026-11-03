@@ -100,6 +100,7 @@ int main()
         t.soundCols     = 17;
         t.soundShowKeys = false;
         t.soundPinned   = true;
+        t.soundMonitor  = false;
         t.nowPlayingChat    = false;
         t.nowPlayingChannel = true;
         t.nowPlayingMeta    = true;
@@ -122,13 +123,13 @@ int main()
         CHECK(u.sounds[0].color == 0xC0392B && u.sounds[0].volPct == 150 && u.sounds[7].color == 0 && u.sounds[7].volPct == 100 && u.sounds[399].path == L"E:\\x.wav" &&
                   u.sounds[399].name == L"Letzter" && u.sounds[399].color == 0x00FF7F && u.sounds[399].volPct == 20,
               "Knopf-Farbe, Lautstaerke und letzter Knopf (400)");
-        CHECK(u.soundRows == 18 && u.soundCols == 17 && !u.soundShowKeys && u.soundPinned, "Raster, Tastenkuerzel anzeigen, Fenster oben");
+        CHECK(u.soundRows == 18 && u.soundCols == 17 && !u.soundShowKeys && u.soundPinned && !u.soundMonitor, "Raster, Tastenkuerzel anzeigen, Fenster oben, Clips selbst hoeren aus");
         CHECK(!u.nowPlayingChat && u.nowPlayingChannel && u.nowPlayingMeta && u.language == 2, "Now-Playing und Sprache");
         CHECK(u.advancedOpen, "Erweitert aufgeklappt gespeichert");
 
         // Standardwerte einer leeren INI
         const Settings d = LoadSettings(ini + L".gibtsnicht");
-        CHECK(d.nowPlayingChat && !d.nowPlayingChannel && !d.nowPlayingMeta && d.language == 0 && d.soundVolPct == 100 && d.soundRows == 2 && d.soundCols == 4 && d.soundShowKeys && !d.soundPinned && d.profiles.items.empty() && !d.advancedOpen, "Standardwerte (Erweitert zu)");
+        CHECK(d.nowPlayingChat && !d.nowPlayingChannel && !d.nowPlayingMeta && d.language == 0 && d.soundVolPct == 100 && d.soundRows == 2 && d.soundCols == 4 && d.soundShowKeys && !d.soundPinned && d.soundMonitor && d.profiles.items.empty() && !d.advancedOpen, "Standardwerte (Erweitert zu)");
 
         // Obergrenze der Profile
         profiles::ProfileBook many;

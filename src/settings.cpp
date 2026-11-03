@@ -132,6 +132,7 @@ Settings LoadSettings(const std::wstring& iniPath, const wchar_t* section)
     s.soundRows     = std::min(kSoundMaxRows, std::max(1, static_cast<int>(GetPrivateProfileIntW(section, L"SoundRows", s.soundRows, p))));
     s.soundShowKeys = GetPrivateProfileIntW(section, L"SoundShowKeys", s.soundShowKeys, p) != 0;
     s.soundPinned   = GetPrivateProfileIntW(section, L"SoundPinned", s.soundPinned, p) != 0;
+    s.soundMonitor  = GetPrivateProfileIntW(section, L"SoundMonitor", s.soundMonitor, p) != 0;
     {
         // Ein Schluessel je Knopf: Slot<n>=RRGGBB|Lautstaerke|Pfad|Name (Pfade enthalten kein '|', der Name steht zuletzt). SoundCount = hoechster belegter
         // Knopf, damit nicht alle 400 Schluessel abgefragt werden. Aeltere Versionen: SoundPath<n>/SoundName<n> (n <= 8).
@@ -236,6 +237,7 @@ void SaveSettings(const std::wstring& iniPath, const Settings& s)
     WritePrivateProfileStringW(kSection, L"SoundCols", std::to_wstring(s.soundCols).c_str(), p);
     WritePrivateProfileStringW(kSection, L"SoundShowKeys", s.soundShowKeys ? L"1" : L"0", p);
     WritePrivateProfileStringW(kSection, L"SoundPinned", s.soundPinned ? L"1" : L"0", p);
+    WritePrivateProfileStringW(kSection, L"SoundMonitor", s.soundMonitor ? L"1" : L"0", p);
     {
         WritePrivateProfileStringW(L"Sounds", nullptr, nullptr, p);
         int last = 0;

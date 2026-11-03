@@ -74,7 +74,7 @@ private:
         int            rows = 0, cols = 0;
         float          cellW = 0, cellH = 0, gap = 0, content = 0; // Hoehe aller Zeilen
         // Werkzeugleiste
-        Gdiplus::RectF rowsLabel, rowsMinus, rowsVal, rowsPlus, colsLabel, colsMinus, colsVal, colsPlus, showKeys, showKeysLabel, volLabel, volume, volVal, stop, aux;
+        Gdiplus::RectF rowsLabel, rowsMinus, rowsVal, rowsPlus, colsLabel, colsMinus, colsVal, colsPlus, showKeys, showKeysLabel, volLabel, volume, volVal, selfHear, selfHearLabel, stop, aux;
         // Editor
         Gdiplus::RectF panel, nameField, fileField, fileBtn, swatch[12], volSlider, keyBtn, delBtn, cancelBtn, okBtn, testBtn;
     };

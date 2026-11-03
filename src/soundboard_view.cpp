@@ -147,6 +147,13 @@ View::Geo View::MakeGeo(const RectF& area, const Host& h) const
     g.volume       = RectF(area.X + 94 * s, fy + 3 * s, std::min(300.0f * s, std::max(80.0f * s, area.Width - 94 * s - 4 * s - 150 * s - 70 * s)), 22 * s);
     g.volVal       = RectF(g.volume.X + g.volume.Width + 6 * s, fy, 56 * s, bh);
     g.stop         = RectF(area.X + area.Width - 4 * s - 140 * s, fy, 140 * s, bh);
+    // "Selbst hoeren": zwischen Lautstaerke und "Alle stoppen", nur wenn genug Platz ist (sonst ausgeblendet, die Einstellung gilt trotzdem)
+    const float shX = g.volVal.X + g.volVal.Width + 16 * s;
+    const float shW = g.stop.X - 8 * s - shX;
+    if (shW >= 150 * s) {
+        g.selfHear      = RectF(shX, fy + 1 * s, 44 * s, 26 * s);
+        g.selfHearLabel = RectF(shX + 52 * s, fy, shW - 52 * s, bh);
+    }
 
     g.gridArea = RectF(area.X, g.bar.Y + g.bar.Height + 4 * s, area.Width, g.foot.Y - (g.bar.Y + g.bar.Height) - 8 * s);
     return g;
@@ -417,6 +424,10 @@ void View::Paint(Graphics& g, const RectF& area, const Host& h)
     Text(g, Tr(L"Lautstärke"), *h.small, geo.volLabel, C(col::sub));
     DrawSlider(g, geo.volume, st.soundVolPct / 200.0f, sliderDrag_ == 1 || hoverBar_ == 7, true);
     Text(g, FormatPercent(st.soundVolPct), *h.small, geo.volVal, C(col::text));
+    if (geo.selfHear.Width > 0) {
+        DrawToggle(g, geo.selfHear, st.soundMonitor ? 1.0f : 0.0f);
+        Text(g, Tr(L"Selbst hören"), *h.small, geo.selfHearLabel, hoverBar_ == 9 ? C(col::text) : C(col::sub));
+    }
     DrawButton(g, geo.stop, Tr(L"Alle stoppen"), *h.small, false, hoverBar_ == 8, s);
 
     if (!toast_.empty()) {
@@ -574,6 +585,7 @@ bool View::MouseDown(int x, int y, const Host& h)
         return true;
     }
     if (In(g.stop, x, y)) { en.SoundStop(); return true; }
+    if (g.selfHear.Width > 0 && (In(g.selfHear, x, y) || In(g.selfHearLabel, x, y))) { en.SetSoundMonitor(!st.soundMonitor); return true; }
 
     const int slot = CellAt(g, x, y);
     if (slot >= 0) {
@@ -616,6 +628,7 @@ void View::MouseMove(int x, int y, const Host& h)
     else if (In(g.aux, x, y)) hoverBar_ = 6;
     else if (In(g.volume, x, y)) hoverBar_ = 7;
     else if (In(g.stop, x, y)) hoverBar_ = 8;
+    else if (g.selfHear.Width > 0 && (In(g.selfHear, x, y) || In(g.selfHearLabel, x, y))) hoverBar_ = 9;
     else hoverSlot_ = CellAt(g, x, y);
 }
 

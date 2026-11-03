@@ -261,7 +261,7 @@ int main(int argc, char** argv)
         const auto sounds = en.GetSounds();
         CHECK(sounds.size() == static_cast<size_t>(kSoundSlots) && sounds[0].state == Soundboard::State::Ready && sounds[0].name == L"tone" && sounds[0].seconds > 5.5, "Slot geladen (%zu, Name '%ls')", sounds.size(), sounds[0].name.c_str());
         en.SoundPlay(0);
-        CHECK(en.GetSettings().enabled, "Sound schaltet \"Musik einspielen\" ein");
+        CHECK(!en.GetSettings().enabled, "Sound laesst \"Musik einspielen\" unberuehrt (aus bleibt aus)");
         const size_t k0 = RunFor(1800);
         CHECK(Peak(k0, 0.4, 0.3) > 300 && std::fabs(Freq(k0, 0.4) - 440) < 12, "Sound ohne Musikquelle (Spitze %d, %.0f Hz)", Peak(k0, 0.4, 0.3), Freq(k0, 0.4));
         const int full = Peak(k0, 0.4, 0.4);

@@ -59,6 +59,8 @@ int main()
     // Mithoeren
     const bool mon = en.GetSettings().monitor;
     CHECK(RunCommand("monitor") && en.GetSettings().monitor == !mon && RunCommand("monitor") && en.GetSettings().monitor == mon, "monitor");
+    const bool smon = en.GetSettings().soundMonitor;
+    CHECK(RunCommand("soundmonitor") && en.GetSettings().soundMonitor == !smon && RunCommand("soundmonitor") && en.GetSettings().soundMonitor == smon, "soundmonitor");
 
     // EQ-Presets: mitgelieferte (Gross-/Kleinschreibung egal, URL-kodiert) und eigene
     const std::wstring builtin = eq::PresetName(1);

@@ -70,6 +70,9 @@ void Engine::Init(const std::wstring& configDir)
     monitorReader_.Reset();
     status_     = settings_.enabled ? L"Warte auf App..." : L"Aus";
 
+    soundMonitor_ = settings_.soundMonitor;
+    localOut_.SetLogger(logger_);
+    localOut_.Start();
     sounds_.Start(); // nach einem Shutdown wieder bereit (Plugin deaktiviert und wieder aktiviert)
     quit_    = false;
     wake_    = CreateEventW(nullptr, FALSE, FALSE, nullptr);
@@ -82,6 +85,7 @@ void Engine::Shutdown()
     if (wake_) SetEvent(wake_);
     if (watcher_.joinable()) watcher_.join();
     sounds_.Stop(); // Lade-Thread des Soundboards (muss vor dem Entladen der DLL weg sein)
+    localOut_.Stop(); // ebenso der Thread der lokalen Ausgabe
     std::atomic_store(&opus_, std::shared_ptr<OpusPreview>());
     if (engagedMask_.exchange(0) && preCb_) preCb_(lastSchid_.load(), 0); // TS3-Einstellungen des Nutzers wiederherstellen
     gateOn_ = false;
@@ -840,7 +844,30 @@ void Engine::Mix(uint64_t schid, short* samples, int frames, int channels, int* 
         std::fill(gained_.begin(), gained_.begin() + static_cast<std::ptrdiff_t>(need), static_cast<int16_t>(0));
     }
     // Soundboard: laufende Clips kommen ueber die Musik (nach EQ und Musik-Lautstaerke, vor Optimierer/Begrenzer, mit eigener Lautstaerke)
-    const bool mixedVoices = voices && sounds_.Mix(gained_.data(), frames, soundGain_.load(std::memory_order_relaxed));
+    // "Selbst hoeren": Datei-Player-Musik und Clips (ohne App-Ton, den hoerst du ohnehin selbst) zusaetzlich auf die eigene Ausgabe. Bei "Mithoeren" hoerst du ueber TS3.
+    const bool selfHear = soundMonitor_.load(std::memory_order_relaxed) && !monitor_.load(std::memory_order_relaxed);
+    bool       localAny = false;
+    if (selfHear && fileSrc && music) {
+        if (localMix_.size() < need) localMix_.resize(need);
+        std::copy(gained_.begin(), gained_.begin() + static_cast<std::ptrdiff_t>(need), localMix_.begin());
+        localAny = true;
+    }
+    bool mixedVoices = false;
+    if (voices) { // die Stimmen erst allein rendern und dann zur Musik addieren: so lassen sie sich auch ohne Musik auf die lokale Ausgabe legen
+        if (soundScratch_.size() < need) soundScratch_.resize(need);
+        std::fill(soundScratch_.begin(), soundScratch_.begin() + static_cast<std::ptrdiff_t>(need), static_cast<int16_t>(0));
+        mixedVoices = sounds_.Mix(soundScratch_.data(), frames, soundGain_.load(std::memory_order_relaxed));
+        if (mixedVoices) {
+            for (size_t i = 0; i < need; ++i) gained_[i] = static_cast<int16_t>(std::clamp(static_cast<int>(gained_[i]) + soundScratch_[i], -32768, 32767));
+            if (selfHear) {
+                if (localMix_.size() < need) localMix_.resize(need);
+                if (!localAny) std::fill(localMix_.begin(), localMix_.begin() + static_cast<std::ptrdiff_t>(need), static_cast<int16_t>(0));
+                for (size_t i = 0; i < need; ++i) localMix_[i] = static_cast<int16_t>(std::clamp(static_cast<int>(localMix_[i]) + soundScratch_[i], -32768, 32767));
+                localAny = true;
+            }
+        }
+    }
+    if (localAny) localOut_.Write(localMix_.data(), static_cast<size_t>(frames));
     if (mixedVoices) holdFrames_ = kSendHoldFrames;
     const bool audio    = music || mixedVoices;
     const bool sendBit  = alwaysSend_.load() && holdFrames_ > 0;
@@ -983,7 +1010,8 @@ void Engine::SoundPlay(int slot)
     if (slot < 0 || slot >= kSoundSlots) return;
     const Soundboard::State st = sounds_.GetState(slot);
     if (st != Soundboard::State::Ready && st != Soundboard::State::Unloaded && st != Soundboard::State::Loading) return;
-    EnsureEnabled();
+    // Bewusst kein EnsureEnabled(): Clips werden im Mikrofon-Callback gemischt und brauchen "Musik einspielen" nicht. Der Schalter bleibt, wie er ist
+    // (er wuerde sonst auch die gewaehlte App ins Mikrofon holen).
     sounds_.Play(slot);
     if (wake_) SetEvent(wake_);
 }
@@ -1015,6 +1043,15 @@ void Engine::SetSoundShowKeys(bool on)
     std::lock_guard<std::mutex> lk(mutex_);
     settings_.soundShowKeys = on;
     dirty_                  = true;
+}
+
+void Engine::SetSoundMonitor(bool on)
+{
+    if (!on) localOut_.Clear();
+    soundMonitor_ = on;
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.soundMonitor = on;
+    SaveLocked();
 }
 
 void Engine::SetSoundPinned(bool on)

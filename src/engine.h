@@ -19,6 +19,7 @@
 #include "process_capture.h"
 #include "ring_buffer.h"
 #include "settings.h"
+#include "local_out.h"
 #include "soundboard.h"
 #include "voice_optimizer.h"
 
@@ -160,12 +161,15 @@ public:
     void                   SoundReload(int slot); // Datei erneut laden (nach einem Fehler)
     void                   SoundSwap(int a, int b); // zwei Knoepfe tauschen (Ziehen im Raster)
     void                   SoundRename(int slot, const std::wstring& name);
-    void                   SoundPlay(int slot);   // schaltet bei Bedarf "Musik einspielen" ein (wie Play im Datei-Player)
+    void                   SoundPlay(int slot);   // spielt den Clip; unabhaengig von "Musik einspielen" (der Schalter bleibt, wie er ist)
     void                   SoundStop();           // alle Clips stoppen
     void                   SetSoundVolume(int pct); // Gesamtlautstaerke 0..200
     void                   SetSoundGrid(int rows, int cols);
     void                   SetSoundShowKeys(bool on);
     void                   SetSoundPinned(bool on);
+    // Selbst hoeren: Soundboard-Clips und der Datei-Player kommen zusaetzlich auf dein Windows-Standard-Ausgabegeraet (eigene Ausgabe des Plugins, nicht ueber TS3).
+    // Ist "Mithoeren" an, hoerst du ohnehin ueber TS3 (dann pausiert diese Ausgabe, damit nichts doppelt klingt).
+    void                   SetSoundMonitor(bool on);
     SoundInfo              GetSound(int slot);
     std::vector<SoundInfo> GetSounds();
 
@@ -213,6 +217,9 @@ private:
     std::atomic<bool>  micMuted_{false};
     Soundboard         sounds_;
     std::atomic<float> soundGain_{1.0f};
+    LocalOut           localOut_;               // Selbst hoeren (eigene Ausgabe)
+    std::atomic<bool>  soundMonitor_{true};
+    std::vector<int16_t> soundScratch_, localMix_; // nur Audio-Thread: Clips eines Blocks bzw. Mix fuer die lokale Ausgabe
     std::atomic<bool>  alwaysSend_{true};
     std::atomic<bool>  capturing_{false};
 

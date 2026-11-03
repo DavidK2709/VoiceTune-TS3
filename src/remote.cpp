@@ -52,6 +52,7 @@ std::string StateJson() {
            ",\"micVol\":" + std::to_string(s.micVolPct) +
            ",\"playing\":" + ((p.active && !p.paused) ? "true" : "false") +
            ",\"monitor\":" + (s.monitor ? "true" : "false") +
+           ",\"soundMonitor\":" + (s.soundMonitor ? "true" : "false") +
            ",\"profile\":\"" + JsonEsc(WideToUtf8(s.profileName)) + "\"" +
            ",\"preset\":\"" + JsonEsc(WideToUtf8(s.eqPresetName)) + "\"" +
            ",\"source\":\"" + JsonEsc(WideToUtf8(e.SourceLabel())) + "\"}";

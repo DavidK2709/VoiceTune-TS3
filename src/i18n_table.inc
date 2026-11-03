@@ -193,6 +193,7 @@
     {L"Alle Felder belegt – Raster vergrößern", L"All cells in use – enlarge the grid"},
     {L"Tastenkürzel auf Knöpfen zeigen", L"Show hotkeys on buttons"},
     {L"Immer oben", L"Always on top"},
+    {L"Selbst hören", L"Hear myself"},
     {L"Abkoppeln", L"Pop out"},
     {L"Knopf %s", L"Button %s"},
     {L"Wählen …", L"Choose …"},

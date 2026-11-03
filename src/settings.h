@@ -63,6 +63,7 @@ struct Settings {
     int       soundCols     = 4;
     bool      soundShowKeys = true; // Tastenkuerzel auf den Knoepfen anzeigen
     bool      soundPinned   = false; // Soundboard-Fenster immer im Vordergrund
+    bool      soundMonitor  = true;  // Selbst hoeren: Soundboard-Clips und Datei-Player zusaetzlich auf dem Windows-Standard-Ausgabegeraet
 
     // Now-Playing: Titelwechsel im eigenen Chat melden (Standard), optional im Kanal-Chat (erreicht andere!) oder in den Client-Metadaten
     bool nowPlayingChat    = true;

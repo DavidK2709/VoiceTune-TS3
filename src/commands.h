@@ -11,7 +11,8 @@
 //   preset/<Name>                  Equalizer-Preset (mitgeliefert oder eigen)
 //   profile/<Name> | profile_next  Profil anwenden bzw. naechstes Profil reihum
 //   source/<exe>                   Audio-Quelle waehlen (z.B. spotify.exe)
-//   sound/<1-400> | soundstop        Soundboard-Clip abspielen / alle stoppen
+//   sound/<1-400> | soundstop        Soundboard-Clip abspielen / alle stoppen (ohne "Musik einspielen" zu veraendern)
+//   soundmonitor                   Selbst hoeren (Clips + Datei-Player auf dem Standard-Ausgabegeraet) ein/aus umschalten
 #include <string>
 #include <vector>
 
