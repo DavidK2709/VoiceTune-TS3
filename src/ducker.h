@@ -1,3 +1,22 @@
+
+/*
+ * VoiceTune-TS3 - Voicechanger-Plugin für TeamSpeak 3
+ * Copyright (C) 2026  David K., Tony S.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+ 
 #pragma once
 // Ducking: eine Huellkurve, die die Musik absenkt, solange etwas anderes laeuft (Soundboard-Clip) bzw. du sprichst. Reine Logik ohne Windows-Abhaengigkeit.
 // Aufruf im Audio-Thread einmal pro Block: Step() liefert Start- und Endverstaerkung des Blocks, der Aufrufer rampt linear dazwischen (kein Knacken).

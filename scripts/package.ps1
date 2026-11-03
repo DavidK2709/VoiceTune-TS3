@@ -1,3 +1,23 @@
+#
+# VoiceTune-TS3 - Voicechanger-Plugin für TeamSpeak 3
+# Copyright (C) 2026  David K., Tony S.
+#
+# This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# Kopiert das gebaute Plugin in den TeamSpeak-3-Plugin-Ordner des Benutzers.
+# TeamSpeak muss beendet sein (die DLL ist sonst gesperrt).
+
 # Erzeugt VoiceTune.ts3_plugin (ZIP mit package.ini + plugins/) zum Installieren per Doppelklick.
 # Eigener ZIP-Aufbau mit '/' in den Eintragsnamen: Compress-Archive (PowerShell 5.1) schreibt '\', was der TS3-Installer nicht mag.
 param(

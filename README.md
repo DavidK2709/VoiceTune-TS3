@@ -184,3 +184,8 @@ zusätzlich den Wiedergabe-Callback für das Mithören (`--monitor`), löst die 
 Mit den Umgebungsvariablen `AAM_FILES=<Ordner>` (Dateien-Seite per simuliertem Drop), `AAM_UI3=<Ordner>` (Profile, Soundboard mit Editor, Ziehen, Raster und Soundboard-Fenster; Exit-Code 1 bei Abweichung) und `AAM_SET=1` (alle Seiten und das Einstellungs-Popup auf Deutsch und Englisch fotografieren, jedes Element des Popups bedienen und die gespeicherten Werte prüfen; Exit-Code 1 bei Abweichung) werden bestimmte Abläufe geprüft bzw. fotografiert
 (`AAM_HOLD=<Sekunden>` lässt das Fenster zum Anschauen offen, `AAM_LIVE=<Sekunden>` lässt es bedienbar offen, um es selbst auszuprobieren);
 `AAM_BITRATE=<bit/s>` setzt die vom nachgestellten TS3 gemeldete Opus-Bitrate. Das Testfenster ist für echte Maus- und Tastatureingaben gesperrt; die Einstellungen landen in `%TEMP%`, nicht in deinem TS3-Ordner.
+
+
+## Lizenz
+Copyright (C) 2026 David K., Tony S.
+Dieses Projekt steht unter der GNU General Public License v3.0 (siehe LICENSE).
