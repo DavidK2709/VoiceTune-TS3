@@ -43,6 +43,8 @@ public:
     // Der Nutzer hat "Abkoppeln" gedrueckt (nur im Hauptfenster): der Host oeffnet das Soundboard-Fenster
     bool TakePopRequest() { const bool r = popRequest_; popRequest_ = false; return r; }
     bool EditorOpen() const { return editor_.open; }
+    // Tastatur gehoert der Ansicht: Editor offen oder das Suchfeld hat den Fokus (der Host leitet dann WM_CHAR/WM_KEYDOWN weiter)
+    bool WantsKeys() const { return editor_.open || searchFocus_; }
     bool Dragging() const { return drag_.active || sliderDrag_ != 0; }
     void CloseEditor() { editor_.open = false; }
     // Ziehen/Regler abbrechen (Maus-Capture verloren)
@@ -74,7 +76,7 @@ private:
         int            rows = 0, cols = 0;
         float          cellW = 0, cellH = 0, gap = 0, content = 0; // Hoehe aller Zeilen
         // Werkzeugleiste
-        Gdiplus::RectF rowsLabel, rowsMinus, rowsVal, rowsPlus, colsLabel, colsMinus, colsVal, colsPlus, showKeys, showKeysLabel, volLabel, volume, volVal, selfHear, selfHearLabel, stop, aux;
+        Gdiplus::RectF searchField, exportBtn, importBtn, rowsLabel, rowsMinus, rowsVal, rowsPlus, colsLabel, colsMinus, colsVal, colsPlus, showKeys, showKeysLabel, volLabel, volume, volVal, selfHear, selfHearLabel, stop, aux;
         // Editor
         Gdiplus::RectF panel, nameField, fileField, fileBtn, swatch[12], volSlider, keyBtn, delBtn, cancelBtn, okBtn, testBtn;
     };
@@ -83,6 +85,9 @@ private:
     void OpenEditor(int slot, const std::wstring& path = L"");
     void SaveEditor();
     void PickFile(const Host& h);
+    void ExportBoard(const Host& h);
+    void ImportBoard(const Host& h);
+    bool Matches(const std::wstring& name) const;
     void Assign(const std::vector<std::wstring>& files, int slot);
     void Flash(int slot);
     void SetToast(const std::wstring& t) { toast_ = t; toastUntil_ = GetTickCount64() + 3500; }
@@ -92,6 +97,8 @@ private:
     float                 scroll_ = 0;
     int                   hoverSlot_ = -1, hoverBar_ = -1, hoverEd_ = -1;
     bool                  popRequest_ = false;
+    std::wstring          search_;          // Suchtext (leer = alle Knoepfe normal)
+    bool                  searchFocus_ = false;
     int                   sliderDrag_ = 0;      // 1 = Gesamtlautstaerke, 2 = Knopf-Lautstaerke im Editor
     std::vector<float>    flash_ = std::vector<float>(400, 0.0f); // Aufleuchten nach dem Klick
     ULONGLONG             lastTick_ = 0;

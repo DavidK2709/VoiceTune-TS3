@@ -20,6 +20,8 @@
 #include "ring_buffer.h"
 #include "settings.h"
 #include "local_out.h"
+#include "ducker.h"
+#include "loudness.h"
 #include "soundboard.h"
 #include "voice_optimizer.h"
 
@@ -182,6 +184,31 @@ public:
     SoundInfo              GetSound(int slot);
     std::vector<SoundInfo> GetSounds();
 
+    // Soundboard-Datei importieren (ersetzt alle Knoepfe und das Raster; ein Speichervorgang) und lokales Vorhoeren (nie ins Mikrofon)
+    bool                   SoundImport(const std::vector<SoundSlot>& slots, int rows, int cols);
+    void                   SoundPreview(int slot);
+    void                   SoundPreviewStop();
+
+    // Ducking (Musik leiser, solange ein Clip laeuft bzw. du sprichst) und Lautstaerke angleichen (Sounds / Datei-Titel). Alles wird gespeichert.
+    void SetDuckSound(bool on, int db);
+    void SetDuckMic(bool on, int db, int thresholdDb);
+    void SetNormalize(bool sounds, bool tracks, int targetDb);
+    float DuckGain() const { return duckShown_.load(std::memory_order_relaxed); } // aktuelle Absenkung der Musik (1 = keine), fuer die Anzeige
+    bool  MicSpeaking() const { return micSpeaking_.load(std::memory_order_relaxed); }
+
+    // Fensterpositionen (which: 0 Hauptfenster, 1 Soundboard-Fenster, 2 Mini-Fenster; w/h nur beim Soundboard-Fenster), Update-Hinweis, Erststart, Automatik
+    void SetWindowRect(int which, int x, int y, int w, int h);
+    void SetUpdateInfo(const std::wstring& latest, long long checkedAt);
+    void SetUpdateCheck(bool on);
+    void SetFirstRunDone();
+    void SetAutoProfile(bool on);
+    void SetTrayIcon(bool on);
+    // Profil an einen Server (eindeutige ID) und optional einen Kanal koppeln; leere uid loest die Kopplung. false, wenn es das Profil nicht gibt.
+    bool SetProfileAuto(const std::wstring& profile, const std::wstring& uid, const std::wstring& serverName, const std::wstring& channel);
+    // Server/Kanal gewechselt: wendet das passende Profil an (nur wenn es nicht schon das aktuelle ist). Liefert dessen Namen, sonst leer.
+    std::wstring AutoProfileFor(const std::wstring& uid, const std::wstring& channel);
+    bool ApplyProfileNumber(int n); // n-tes Profil (1-basiert) anwenden
+
     // Now-Playing: meldet einen Titelwechsel (Dateititel oder Fenstertitel der App, bereinigt), sobald er >= 3 s stabil ist und "Musik einspielen" an ist.
     // Leerer Titel = nichts mehr zu melden (Musik aus). Aufruf aus dem Watcher-Thread. Welche Ziele (Chat, Kanal, Metadaten) gelten, steht in den Einstellungen.
     void SetNowPlayingCallback(void (*fn)(const std::wstring& title)) { nowPlayingCb_ = fn; }
@@ -232,6 +259,20 @@ private:
     std::atomic<bool>  micMuted_{false};
     Soundboard         sounds_;
     std::atomic<float> soundGain_{1.0f};
+    // Ducking und Angleichen (Audio-Thread liest nur Atomics; Ducker/Detektor gehoeren der Render-Region unter renderMutex_)
+    Ducker               duck_;
+    SpeechDetector       speech_;
+    std::atomic<bool>    duckSoundOn_{true}, duckMicOn_{false}, micSpeaking_{false};
+    std::atomic<float>   duckSoundDb_{12.0f}, duckMicDb_{10.0f}, duckMicThr_{-45.0f}, duckShown_{1.0f};
+    std::atomic<float>   fileTrackGain_{1.0f};  // Angleich-Verstaerkung des laufenden Titels (linear)
+    std::vector<int16_t> previewScratch_;
+    std::wstring         currentTrackPath_;     // unter playerMutex_
+    void                 ApplyTrackGainLocked(); // unter playerMutex_: Verstaerkung des laufenden Titels setzen, ggf. Messung anstossen
+    void                 MeasureTrackAsync(const std::wstring& path);
+    std::mutex           loudMutex_;
+    std::vector<std::wstring> loudQueue_;
+    std::thread          loudThread_;
+    std::atomic<bool>    loudRunning_{false}, loudQuit_{false};
     LocalOut           localOut_;               // Selbst hoeren (eigene Ausgabe)
     std::atomic<bool>  soundMonitor_{true}, fileMonitor_{true};
     std::vector<int16_t> soundScratch_, localMix_, fileScratch_; // unter renderMutex_: Clips eines Blocks, Mix fuer die lokale Ausgabe, Datei-Block

@@ -7,7 +7,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <map>
+#include <mutex>
 #include <string>
 
 #include "app_discovery.h"
@@ -16,7 +18,11 @@
 #include "soundboard_view.h"
 #include "soundboard_window.h"
 #include "engine.h"
+#include "mini_window.h"
 #include "remote.h"
+#include "tray.h"
+#include "update_check.h"
+#include "version.h"
 #include "plugin_definitions.h"
 #include "teamspeak/public_definitions.h"
 #include "teamspeak/public_rare_definitions.h"
@@ -32,9 +38,21 @@ namespace {
 struct TS3Functions ts3Functions;
 char*               g_pluginId = nullptr;
 
-enum { MENU_ID_TOGGLE = 1, MENU_ID_CONFIG = 2, MENU_ID_SOUNDBOARD = 3 };
+enum { MENU_ID_TOGGLE = 1, MENU_ID_CONFIG = 2, MENU_ID_SOUNDBOARD = 3, MENU_ID_MINI = 4 };
 
-void Log(const char* msg) { ts3Functions.logMessage(msg, LogLevel_INFO, "VoiceTune", 0); }
+// Die letzten Logzeilen des Plugins (fuer "Diagnose kopieren")
+std::mutex              g_logMutex;
+std::deque<std::string> g_logLines;
+
+void Log(const char* msg)
+{
+    {
+        std::lock_guard<std::mutex> lk(g_logMutex);
+        g_logLines.push_back(msg ? msg : "");
+        while (g_logLines.size() > 200) g_logLines.pop_front();
+    }
+    ts3Functions.logMessage(msg, LogLevel_INFO, "VoiceTune", 0);
+}
 
 
 std::wstring Utf8ToWide(const char* s)
@@ -333,10 +351,114 @@ PluginMenuItem* CreateMenuItem(PluginMenuType type, int id, const char* text, co
     return item;
 }
 
+// ---- Server/Kanal, Profil-Automatik, Diagnose ---------------------------------------------------------------------------------------------
+std::string GetServerString(uint64 schid, size_t flag)
+{
+    std::string out;
+    char*       v = nullptr;
+    if (ts3Functions.getServerVariableAsString && ts3Functions.getServerVariableAsString(schid, flag, &v) == ERROR_ok && v) {
+        out = v;
+        ts3Functions.freeMemory(v);
+    }
+    return out;
+}
+
+// Eindeutige ID, Name des Servers und Name des eigenen Kanals fuer die aktive Verbindung; false, wenn nicht verbunden
+bool ServerInfoFor(uint64 schid, std::wstring* uid, std::wstring* name, std::wstring* channel)
+{
+    int status = 0;
+    if (!ts3Functions.getConnectionStatus || ts3Functions.getConnectionStatus(schid, &status) != ERROR_ok || status != STATUS_CONNECTION_ESTABLISHED) return false;
+    const std::string u = GetServerString(schid, VIRTUALSERVER_UNIQUE_IDENTIFIER);
+    if (u.empty()) return false;
+    if (uid) *uid = Utf8ToWide(u.c_str());
+    if (name) *name = Utf8ToWide(GetServerString(schid, VIRTUALSERVER_NAME).c_str());
+    if (channel) {
+        channel->clear();
+        anyID  me = 0;
+        uint64 ch = 0;
+        char*  cn = nullptr;
+        if (ts3Functions.getClientID(schid, &me) == ERROR_ok && ts3Functions.getChannelOfClient(schid, me, &ch) == ERROR_ok && ts3Functions.getChannelVariableAsString &&
+            ts3Functions.getChannelVariableAsString(schid, ch, CHANNEL_NAME, &cn) == ERROR_ok && cn) {
+            *channel = Utf8ToWide(cn);
+            ts3Functions.freeMemory(cn);
+        }
+    }
+    return true;
+}
+
+bool ServerInfoNow(std::wstring* uid, std::wstring* name, std::wstring* channel)
+{
+    return ts3Functions.getCurrentServerConnectionHandlerID && ServerInfoFor(ts3Functions.getCurrentServerConnectionHandlerID(), uid, name, channel);
+}
+
+// Server oder Kanal haben gewechselt: passendes Profil anwenden (nur fuer den aktiven Tab) und im Chat melden
+void CheckAutoProfile(uint64 schid)
+{
+    if (!ts3Functions.getCurrentServerConnectionHandlerID || schid != ts3Functions.getCurrentServerConnectionHandlerID()) return;
+    std::wstring uid, name, channel;
+    if (!ServerInfoFor(schid, &uid, &name, &channel)) return;
+    const std::wstring applied = Engine::Get().AutoProfileFor(uid, channel);
+    if (applied.empty()) return;
+    const std::string msg = "[color=#3D8BFF][b]VoiceTune:[/b][/color] " + Tr8("Profil") + " [b]" + WideToUtf8(applied) + "[/b] " + Tr8("aktiviert (automatisch)");
+    ts3Functions.printMessageToCurrentTab(msg.c_str());
+}
+
+std::string WindowsVersionText()
+{
+    using Fn = LONG(WINAPI*)(OSVERSIONINFOW*);
+    OSVERSIONINFOW vi{};
+    vi.dwOSVersionInfoSize = sizeof(vi);
+    if (HMODULE nt = GetModuleHandleW(L"ntdll.dll"))
+        if (auto fn = reinterpret_cast<Fn>(reinterpret_cast<void*>(GetProcAddress(nt, "RtlGetVersion")))) fn(&vi);
+    return "Windows " + std::to_string(vi.dwMajorVersion) + "." + std::to_string(vi.dwMinorVersion) + " Build " + std::to_string(vi.dwBuildNumber);
+}
+
+// Text fuer "Diagnose kopieren": Versionen, Einstellungen (ohne Pfade und Namen), Zustand, letzte Logzeilen
+std::wstring BuildDiagnostics()
+{
+    Engine&        en = Engine::Get();
+    const Settings s  = en.GetSettings();
+    std::string    o  = std::string("VoiceTune ") + VOICETUNE_VERSION + "\r\n" + WindowsVersionText() + "\r\n";
+    char*          ver = nullptr;
+    if (ts3Functions.getClientLibVersion && ts3Functions.getClientLibVersion(&ver) == ERROR_ok && ver) {
+        o += std::string("TeamSpeak-ClientLib ") + ver + "\r\n";
+        ts3Functions.freeMemory(ver);
+    }
+    auto yn = [](bool b) { return b ? "an" : "aus"; };
+    o += "\r\n[Einstellungen]\r\n";
+    o += std::string("Musik einspielen: ") + yn(s.enabled) + ", Quelle gesetzt: " + (s.targetExe.empty() ? "nein" : "ja") + ", Musik " + std::to_string(s.musicVolPct) + " %, Mikro " +
+         std::to_string(s.micVolPct) + " %\r\n";
+    o += std::string("Musikmodus: ") + yn(s.musicMode) + ", Gate " + std::to_string(s.gateDb) + " dB, Immer senden: " + yn(s.alwaysSend) + ", Mono: " + yn(s.mono) + ", Qualitaet " +
+         std::to_string(s.quality) + "\r\n";
+    o += std::string("Opus optimieren: ") + yn(s.optimizeForOpus) + ", Opus-Vorschau: " + yn(s.opusPreview) + ", Mithoeren: " + yn(s.monitor) + " (" + std::to_string(s.monitorDelayMs) +
+         " ms), EQ: " + yn(s.eqEnabled) + " (" + std::to_string(s.eqBands) + " Baender)\r\n";
+    o += std::string("Ducking Sounds: ") + yn(s.duckSoundOn) + " (" + std::to_string(s.duckSoundDb) + " dB), Ducking Mikro: " + yn(s.duckMicOn) + " (" + std::to_string(s.duckMicDb) + " dB, ab " +
+         std::to_string(s.duckMicThresholdDb) + " dB), Angleichen Sounds/Titel: " + yn(s.normSounds) + "/" + yn(s.normTracks) + " (" + std::to_string(s.normTargetDb) + " dB)\r\n";
+    int used = 0;
+    for (const auto& b : s.sounds) used += b.path.empty() ? 0 : 1;
+    o += "Soundboard: " + std::to_string(s.soundRows) + " x " + std::to_string(s.soundCols) + ", " + std::to_string(used) + " belegt, Profile: " + std::to_string(s.profiles.items.size()) +
+         ", Auto-Profil: " + yn(s.autoProfile) + ", Sprache " + std::to_string(s.language) + ", Tray: " + yn(s.trayIcon) + "\r\n";
+    o += "\r\n[Zustand]\r\n";
+    o += "Status: " + WideToUtf8(en.Status()) + "\r\n";
+    o += "Diagnose: " + WideToUtf8(en.Diagnostics()) + "\r\n";
+    o += "Kanal-Codec: " + WideToUtf8(en.CodecInfo()) + (en.CodecIsVoice() ? " (Voice: mono)" : "") + "\r\n";
+    o += std::string("Stream Deck: ") + (RemoteIsRunning() ? "aktiv, Port " : "nicht verfuegbar, Port ") + std::to_string(RemotePort()) + "\r\n";
+    if (ts3Functions.getCurrentServerConnectionHandlerID) {
+        const uint64 schid = ts3Functions.getCurrentServerConnectionHandlerID();
+        o += "TS3: " + SelfStateReport(schid) + "\r\n";
+    }
+    o += "\r\n[Log]\r\n";
+    {
+        std::lock_guard<std::mutex> lk(g_logMutex);
+        for (const auto& l : g_logLines) o += l + "\r\n";
+    }
+    return Utf8ToWide(o.c_str());
+}
+
 } // namespace
 
 EXPORT const char* ts3plugin_name() { return "VoiceTune"; }
-EXPORT const char* ts3plugin_version() { return "2.0"; }
+EXPORT const char* ts3plugin_version() { return VOICETUNE_VERSION; }
 EXPORT int         ts3plugin_apiVersion() { return PLUGIN_API_VERSION; }
 EXPORT const char* ts3plugin_author() { return "Dave Swift X Michael Schulz"; }
 EXPORT const char* ts3plugin_description()
@@ -372,6 +494,10 @@ EXPORT int ts3plugin_init()
     SetHotkeySetupHandler([] {
         if (ts3Functions.showHotkeySetup) ts3Functions.showHotkeySetup();
     });
+    SetDiagnosticsHandler(BuildDiagnostics);
+    SetServerInfoHandler(ServerInfoNow);
+    updatecheck::Start();
+    TraySetEnabled(Engine::Get().GetSettings().trayIcon);
     sbv::SetHotkeyHandlers(
         [](int slot) { // Tastenkuerzel eines Soundboard-Knopfes: Aufnahme-Dialog von TeamSpeak
             if (!ts3Functions.requestHotkeyInputDialog || !g_pluginId) return;
@@ -402,8 +528,11 @@ EXPORT int ts3plugin_init()
 EXPORT void ts3plugin_shutdown()
 {
     RemoteStop();
+    TraySetEnabled(false);
+    CloseMiniWindow();
     CloseSoundboardWindow();
     CloseConfigDialog();
+    updatecheck::Stop();
     RestoreMeta();
     Engine::Get().Shutdown();
     if (g_pluginId) {
@@ -419,10 +548,20 @@ EXPORT int ts3plugin_requestAutoload() { return 1; } // nach der Installation vo
 // Erste erfolgreiche Verbindung: Hinweis zur Stream-Deck-Schnittstelle (falls sie nicht starten konnte) dort zeigen, wo der Nutzer gerade ist
 EXPORT void ts3plugin_onConnectStatusChangeEvent(uint64 serverConnectionHandlerID, int newStatus, unsigned int errorNumber)
 {
+    if (newStatus == STATUS_CONNECTION_ESTABLISHED) CheckAutoProfile(serverConnectionHandlerID);
     if (g_remoteDown && g_remoteNoticePending && newStatus == STATUS_CONNECTION_ESTABLISHED) {
         g_remoteNoticePending = false;
         PrintRemoteNotice();
     }
+}
+
+// Server-Tab gewechselt bzw. ein Client (auch du selbst) hat den Kanal gewechselt: Profil-Automatik pruefen
+EXPORT void ts3plugin_currentServerConnectionChanged(uint64 serverConnectionHandlerID) { CheckAutoProfile(serverConnectionHandlerID); }
+
+EXPORT void ts3plugin_onClientMoveEvent(uint64 serverConnectionHandlerID, anyID clientID, uint64 oldChannelID, uint64 newChannelID, int visibility, const char* moveMessage)
+{
+    anyID me = 0;
+    if (ts3Functions.getClientID && ts3Functions.getClientID(serverConnectionHandlerID, &me) == ERROR_ok && me == clientID && newChannelID != 0) CheckAutoProfile(serverConnectionHandlerID);
 }
 
 EXPORT int ts3plugin_offersConfigure() { return PLUGIN_OFFERS_CONFIGURE_NEW_THREAD; }
@@ -438,11 +577,12 @@ EXPORT void ts3plugin_registerPluginID(const char* id)
 
 EXPORT void ts3plugin_initMenus(struct PluginMenuItem*** menuItems, char** menuIcon)
 {
-    *menuItems    = static_cast<PluginMenuItem**>(std::malloc(sizeof(PluginMenuItem*) * 4));
+    *menuItems    = static_cast<PluginMenuItem**>(std::malloc(sizeof(PluginMenuItem*) * 5));
     (*menuItems)[0] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_TOGGLE, Tr8("Musik einspielen: Ein/Aus").c_str(), "toggle.png");
     (*menuItems)[1] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_CONFIG, Tr8("Steuerung öffnen").c_str(), "settings.png");
     (*menuItems)[2] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_SOUNDBOARD, Tr8("Soundboard öffnen").c_str(), "plugin.png");
-    (*menuItems)[3] = nullptr;
+    (*menuItems)[3] = CreateMenuItem(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_MINI, Tr8("Mini-Fenster öffnen").c_str(), "plugin.png");
+    (*menuItems)[4] = nullptr;
     *menuIcon       = static_cast<char*>(std::malloc(PLUGIN_MENU_BUFSZ));
     std::strcpy(*menuIcon, "plugin.png");
 }
@@ -459,6 +599,8 @@ EXPORT void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum Plu
         OpenConfigDialog();
     } else if (menuItemID == MENU_ID_SOUNDBOARD) {
         OpenSoundboardWindow();
+    } else if (menuItemID == MENU_ID_MINI) {
+        OpenMiniWindow();
     }
 }
 

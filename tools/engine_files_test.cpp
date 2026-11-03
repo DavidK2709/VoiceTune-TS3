@@ -373,6 +373,128 @@ int main(int argc, char** argv)
         en.SetMonitorDelay(250);
     }
 
+    // ---- 7b. Ducking, Vorhoeren, Angleichen, Board-Import, Profil-Automatik ---------------------------------------------------------------------
+    {
+        en.PlayerClear();
+        en.PlayerAdd({wav});
+        en.PlayerSetRepeat(RepeatMode::One); // die Musik soll waehrend der Ducking-Pruefungen durchlaufen
+        en.PlayerPlay(0);
+        en.SoundSetSlot(0, wav);
+        for (int i = 0; i < 400 && en.GetSounds()[0].state != Soundboard::State::Ready; ++i) Sleep(20);
+
+        // Sound-Ducking: Musik wird abgesenkt, solange ein Clip laeuft, und kommt danach zurueck
+        en.SetDuckSound(true, 12);
+        RunFor(2500);
+        CHECK(en.DuckGain() > 0.97f, "ohne Clip keine Absenkung: %.2f", en.DuckGain());
+        en.SoundPlay(0);
+        RunFor(700);
+        const float duckedGain = en.DuckGain();
+        CHECK(duckedGain < 0.32f && duckedGain > 0.2f, "Musik gesenkt um ~12 dB: %.3f", duckedGain);
+        en.SoundStop();
+        RunFor(2500);
+        CHECK(en.DuckGain() > 0.96f, "Musik kommt zurueck: %.3f", en.DuckGain());
+        en.SetDuckSound(false, 12);
+        en.SoundPlay(0);
+        RunFor(500);
+        CHECK(en.DuckGain() > 0.97f, "Ducking aus: %.3f", en.DuckGain());
+        en.SoundStop();
+        RunFor(300);
+
+        // Mikrofon-Ducking: Sprache (Pegel ueber der Schwelle) senkt die Musik
+        en.SetDuckMic(true, 10, -45);
+        g_micNoise = 3000;
+        RunFor(800);
+        CHECK(en.MicSpeaking() && en.DuckGain() < 0.4f, "Sprache erkannt, Musik gesenkt: %d %.3f", en.MicSpeaking(), en.DuckGain());
+        g_micNoise = 0;
+        RunFor(3500);
+        CHECK(!en.MicSpeaking() && en.DuckGain() > 0.95f, "Stille: Musik zurueck: %d %.3f", en.MicSpeaking(), en.DuckGain());
+        en.SetDuckMic(false, 10, -45);
+        en.PlayerSetRepeat(RepeatMode::Off);
+        en.PlayerStop();
+        RunFor(400);
+
+        // Vorhoeren geht nie ins Mikrofon
+        const size_t kPrev = RunFor(300);
+        en.SoundPreview(0);
+        const size_t kPrev2 = RunFor(1200);
+        CHECK(Peak(kPrev, 0.0, 0.3) == 0 && Peak(kPrev2, 0.0, 1.2) == 0, "Vorhoeren: Mikrofon bleibt still (%d)", Peak(kPrev2, 0.0, 1.2));
+        en.SoundPreviewStop();
+        en.SoundPreview(33); // leerer Knopf: tut nichts
+        en.SoundSetSlot(0, L"");
+
+        // Angleichen der Datei-Titel: Messung im Hintergrund, danach andere Lautstaerke
+        en.PlayerClear();
+        en.PlayerAdd({wav});
+        en.PlayerPlay(0);
+        const size_t kn0 = RunFor(1500);
+        const int    pBefore = Peak(kn0, 0.5, 0.8);
+        en.SetNormalize(false, true, -30);
+        RunFor(1500);
+        en.PlayerPlay(0); // neu starten: die Verstaerkung gilt ab dem Titelstart
+        const size_t kn1 = RunFor(2500);
+        const Settings ns = en.GetSettings();
+        CHECK(ns.trackGain.size() == 1 && ns.trackGain[0].second < 0.0f && ns.trackGain[0].second > -60.0f, "Titel gemessen: %zu Eintraege", ns.trackGain.size());
+        if (!ns.trackGain.empty()) {
+            const float want = std::pow(10.0f, (-30.0f - ns.trackGain[0].second) / 20.0f);
+            const int   pAfter = Peak(kn1, 1.0, 0.8);
+            CHECK(pBefore > 500 && std::fabs(static_cast<float>(pAfter) / pBefore - want) < 0.2f * want, "Titel angeglichen: %d -> %d (erwartet x%.2f)", pBefore, pAfter, want);
+        }
+        en.SetNormalize(false, false, -18);
+        en.PlayerStop();
+        en.PlayerClear();
+        RunFor(300);
+
+        // Board importieren: ein Speichervorgang, Raster und Knoepfe ersetzt
+        std::vector<SoundSlot> imp(kSoundSlots);
+        imp[0]  = {wav, L"Eins", 0xC0392B, 150};
+        imp[70] = {mp3, L"Siebzig", 0, 100};
+        CHECK(en.SoundImport(imp, 3, 5), "Import");
+        const Settings is = en.GetSettings();
+        CHECK(is.soundRows == 3 && is.soundCols == 5 && is.sounds[0].name == L"Eins" && is.sounds[0].color == 0xC0392B && is.sounds[0].volPct == 150 && is.sounds[70].path == mp3 &&
+                  is.sounds[5].path.empty(),
+              "Board ersetzt");
+        for (int i = 0; i < 400 && en.GetSound(0).state != Soundboard::State::Ready; ++i) Sleep(20);
+        CHECK(en.GetSound(0).state == Soundboard::State::Ready && en.GetSound(70).state == Soundboard::State::Unloaded, "Knopf 1 geladen, Knopf 71 erst beim Klick");
+        CHECK(en.SoundImport(std::vector<SoundSlot>(), 99, 99) && en.GetSettings().soundRows * en.GetSettings().soundCols <= kSoundSlots && en.GetSound(0).path.empty(), "leeres Board, Raster begrenzt");
+        en.SetSoundGrid(2, 4);
+
+        // Profil-Automatik: Server (UID) + optional Kanal
+        en.SetMusicVolume(60);
+        CHECK(en.SaveProfile(L"Zocken") == PresetResult::Ok, "Profil Zocken");
+        en.SetMusicVolume(90);
+        CHECK(en.SaveProfile(L"Lobby") == PresetResult::Ok, "Profil Lobby");
+        en.ApplyProfile(L"Zocken"); // aktuell ist Zocken, die Automatik soll auf Lobby wechseln
+        CHECK(en.SetProfileAuto(L"Lobby", L"uid-1", L"Mein Server", L"") && en.SetProfileAuto(L"Zocken", L"uid-1", L"Mein Server", L"Gaming") && !en.SetProfileAuto(L"Nix", L"x", L"y", L""),
+              "Kopplung setzen");
+        CHECK(en.AutoProfileFor(L"uid-1", L"Allgemein") == L"Lobby" && en.GetSettings().profileName == L"Lobby" && en.GetSettings().musicVolPct == 90, "anderer Kanal: Lobby");
+        CHECK(en.AutoProfileFor(L"uid-1", L"Gaming") == L"Zocken" && en.GetSettings().musicVolPct == 60, "Kanal Gaming: Zocken");
+        CHECK(en.AutoProfileFor(L"uid-1", L"gaming").empty(), "schon aktiv: nichts zu tun");
+        CHECK(en.AutoProfileFor(L"uid-2", L"Gaming").empty() && en.AutoProfileFor(L"", L"Gaming").empty(), "fremder Server: nichts");
+        CHECK(en.SaveProfile(L"Zocken") == PresetResult::Updated, "Aktualisieren");
+        {
+            const Profile* z = en.GetSettings().profiles.Find(L"Zocken");
+            CHECK(z && z->autoServerUid == L"uid-1" && z->autoChannel == L"Gaming" && z->autoServerName == L"Mein Server", "Aktualisieren behaelt die Kopplung");
+        }
+        en.SetAutoProfile(false);
+        en.ApplyProfile(L"Lobby");
+        CHECK(en.AutoProfileFor(L"uid-1", L"Gaming").empty(), "Automatik aus");
+        en.SetAutoProfile(true);
+        CHECK(en.ApplyProfileNumber(2) && en.GetSettings().profileName == L"Lobby" && en.ApplyProfileNumber(1) && en.GetSettings().profileName == L"Zocken" && !en.ApplyProfileNumber(0) &&
+                  !en.ApplyProfileNumber(3),
+              "Profil per Nummer");
+        CHECK(en.SetProfileAuto(L"Zocken", L"", L"", L"") && en.GetSettings().profiles.Find(L"Zocken")->autoServerUid.empty(), "Kopplung loesen");
+        en.DeleteProfile(L"Zocken");
+        en.DeleteProfile(L"Lobby");
+        en.SetMusicVolume(100);
+
+        // Fenster und Update-Werte
+        en.SetWindowRect(1, -1200, 80, 900, 640);
+        en.SetUpdateInfo(L"v9.9", 1234567890LL);
+        const Settings ws = en.GetSettings();
+        CHECK(ws.sbX == -1200 && ws.sbY == 80 && ws.sbW == 900 && ws.sbH == 640 && ws.updateLatest == L"v9.9" && ws.updateCheckedAt == 1234567890LL, "Fenster- und Update-Werte");
+        en.SetEnabled(true);
+    }
+
     // ---- 8. Now-Playing: Titelwechsel melden (Datei), einmal je Titel, leer bei "Musik aus" -------------------------------------------------------
     {
         static std::vector<std::wstring> got;

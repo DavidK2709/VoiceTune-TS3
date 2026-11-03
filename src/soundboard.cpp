@@ -44,6 +44,8 @@ void Soundboard::Load(int slot, const std::wstring& path)
     bytes_ -= s.size.exchange(0);
     s.seconds       = 0;
     s.playWhenReady = false;
+    s.previewWhenReady = false;
+    s.rmsDb = s.peakDb = -120.0f;
     {
         std::lock_guard<std::mutex> lk(mutex_);
         s.path = path;
@@ -65,6 +67,8 @@ void Soundboard::Register(int slot, const std::wstring& path)
     bytes_ -= s.size.exchange(0);
     s.seconds       = 0;
     s.playWhenReady = false;
+    s.previewWhenReady = false;
+    s.rmsDb = s.peakDb = -120.0f;
     {
         std::lock_guard<std::mutex> lk(mutex_);
         s.path = path;
@@ -81,6 +85,8 @@ void Soundboard::Clear(int slot)
     bytes_ -= s.size.exchange(0);
     s.seconds       = 0;
     s.playWhenReady = false;
+    s.previewWhenReady = false;
+    s.rmsDb = s.peakDb = -120.0f;
     {
         std::lock_guard<std::mutex> lk(mutex_);
         s.path.clear();
@@ -112,11 +118,16 @@ void Soundboard::Publish(int slot, uint32_t generation, std::vector<int16_t>&& p
     if (s.generation.load() != generation) return; // inzwischen neu belegt oder geleert
     if (pcm.size() < 2) {
         s.playWhenReady = false;
+    s.previewWhenReady = false;
+    s.rmsDb = s.peakDb = -120.0f;
         s.state         = State::Failed;
         return;
     }
     const size_t   bytes   = pcm.size() * sizeof(int16_t);
     const double   seconds = static_cast<double>(pcm.size() / 2) / 48000.0;
+    const auto     meas    = loudness::Analyze(pcm.data(), pcm.size() / 2);
+    s.rmsDb                = meas.valid ? meas.rmsDb : -120.0f;
+    s.peakDb               = meas.valid ? meas.peakDb : -120.0f;
     std::atomic_store(&s.clip, std::shared_ptr<const std::vector<int16_t>>(std::make_shared<const std::vector<int16_t>>(std::move(pcm))));
     bytes_ -= s.size.exchange(bytes);
     bytes_ += bytes;
@@ -127,6 +138,7 @@ void Soundboard::Publish(int slot, uint32_t generation, std::vector<int16_t>&& p
         s.trigger.fetch_add(1);
         pending_.fetch_add(1);
     }
+    if (s.previewWhenReady.exchange(false)) previewTrigger_ = slot + 1;
     Evict(slot);
 }
 
@@ -233,7 +245,7 @@ bool Soundboard::Mix(int16_t* io, int frames, float gain)
             target->clip = std::move(clip);
             target->pos  = 0;
             target->slot = i;
-            target->mul  = static_cast<float>(slots_[i].volume.load()) / 100.0f;
+            target->mul  = static_cast<float>(slots_[i].volume.load()) / 100.0f * NormMul(slots_[i]);
             slots_[i].playPos.store(0, std::memory_order_relaxed);
         }
     }
@@ -262,6 +274,73 @@ bool Soundboard::Mix(int16_t* io, int frames, float gain)
     }
     active_ = live;
     return mixed;
+}
+
+float Soundboard::NormMul(const Slot& s) const
+{
+    if (!normOn_.load(std::memory_order_relaxed)) return 1.0f;
+    loudness::Measure m;
+    m.rmsDb  = s.rmsDb.load(std::memory_order_relaxed);
+    m.peakDb = s.peakDb.load(std::memory_order_relaxed);
+    m.valid  = m.rmsDb > -119.0f;
+    return loudness::DbToLinear(loudness::GainDb(m, normTarget_.load(std::memory_order_relaxed)));
+}
+
+float Soundboard::Loudness(int slot) const { return (slot < 0 || slot >= kSlots) ? -120.0f : slots_[slot].rmsDb.load(); }
+
+void Soundboard::Preview(int slot)
+{
+    if (slot < 0 || slot >= kSlots) return;
+    Slot&       s  = slots_[slot];
+    const State st = s.state.load();
+    if (st == State::Ready) {
+        s.lastUse       = ++useCounter_;
+        previewTrigger_ = slot + 1;
+    } else if (st == State::Unloaded) {
+        std::wstring path;
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            path = s.path;
+        }
+        if (path.empty()) return;
+        s.previewWhenReady = true;
+        s.state            = State::Loading;
+        Enqueue(slot, s.generation.load(), path);
+    } else if (st == State::Loading) {
+        s.previewWhenReady = true;
+    }
+}
+
+bool Soundboard::MixPreview(int16_t* io, int frames, float gain)
+{
+    if (previewStop_.exchange(false)) {
+        preview_ = Voice();
+        previewTrigger_ = 0;
+        previewLive_    = false;
+    }
+    if (const int t = previewTrigger_.exchange(0); t > 0) {
+        auto clip = std::atomic_load(&slots_[t - 1].clip);
+        if (clip) {
+            preview_.clip = std::move(clip);
+            preview_.pos  = 0;
+            preview_.slot = t - 1;
+            preview_.mul  = static_cast<float>(slots_[t - 1].volume.load()) / 100.0f * NormMul(slots_[t - 1]);
+        }
+    }
+    if (!preview_.clip) {
+        previewLive_ = false;
+        return false;
+    }
+    const size_t total = preview_.clip->size() / 2;
+    const size_t n     = std::min<size_t>(static_cast<size_t>(frames), total - std::min(total, preview_.pos));
+    const int16_t* src = preview_.clip->data() + preview_.pos * 2;
+    const float    g   = gain * preview_.mul;
+    for (size_t k = 0; k < n * 2; ++k) io[k] = static_cast<int16_t>(std::clamp(io[k] + static_cast<int>(src[k] * g), -32768, 32767));
+    preview_.pos += n;
+    const bool done = preview_.pos >= total;
+    if (done) preview_ = Voice();
+    previewLive_ = !done;
+    return n > 0;
 }
 
 void Soundboard::WorkerMain()

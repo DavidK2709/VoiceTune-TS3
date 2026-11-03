@@ -49,6 +49,12 @@ void Engine::Init(const std::wstring& configDir)
     musicMode_  = settings_.musicMode;
     i18n::SetSetting(settings_.language);
     soundGain_  = settings_.soundVolPct / 100.0f;
+    duckSoundOn_ = settings_.duckSoundOn;
+    duckSoundDb_ = static_cast<float>(settings_.duckSoundDb);
+    duckMicOn_   = settings_.duckMicOn;
+    duckMicDb_   = static_cast<float>(settings_.duckMicDb);
+    duckMicThr_  = static_cast<float>(settings_.duckMicThresholdDb);
+    sounds_.SetNormalize(settings_.normSounds, static_cast<float>(settings_.normTargetDb));
     for (int i = 0; i < kSoundSlots; ++i) {
         const SoundSlot& b = settings_.sounds[i];
         if (b.path.empty()) continue;
@@ -111,6 +117,8 @@ void Engine::Shutdown()
         fileActive_ = false;
     }
     if (prober_.joinable()) prober_.join();
+    loudQuit_ = true;
+    if (loudThread_.joinable()) loudThread_.join();
     if (wake_) CloseHandle(wake_);
     wake_ = nullptr;
     capture_.reset();
@@ -232,7 +240,14 @@ void Engine::ApplyUserPreset(const std::wstring& name)
 PresetResult Engine::SaveProfile(const std::wstring& name)
 {
     std::lock_guard<std::mutex> lk(mutex_);
-    const PresetResult r = settings_.profiles.Save(name, ProfileFromSettings(settings_));
+    Profile snap = ProfileFromSettings(settings_);
+    if (const Profile* old = settings_.profiles.Find(name)) { // Automatik und Voicechanger-Wert eines vorhandenen Profils bleiben beim Aktualisieren erhalten
+        snap.autoServerUid  = old->autoServerUid;
+        snap.autoServerName = old->autoServerName;
+        snap.autoChannel    = old->autoChannel;
+        snap.voicePreset    = old->voicePreset;
+    }
+    const PresetResult r = settings_.profiles.Save(name, snap);
     if (r == PresetResult::Ok || r == PresetResult::Updated) {
         settings_.profileName = presets::Sanitize(name);
         SaveLocked();
@@ -291,10 +306,65 @@ bool Engine::ApplyProfile(const std::wstring& name)
     SetMono(p.mono);
     SetOptimizeForOpus(p.optimizeForOpus);
     SetOpusPreview(p.opusPreview);
+    SetSoundGrid(p.soundRows, p.soundCols);
+    SetSoundVolume(p.soundVolPct);
     std::lock_guard<std::mutex> lk(mutex_);
     settings_.profileName = p.name;
     SaveLocked();
     return true;
+}
+
+bool Engine::ApplyProfileNumber(int n)
+{
+    std::wstring name;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        if (n < 1 || n > static_cast<int>(settings_.profiles.items.size())) return false;
+        name = settings_.profiles.items[n - 1].name;
+    }
+    return ApplyProfile(name);
+}
+
+bool Engine::SetProfileAuto(const std::wstring& profile, const std::wstring& uid, const std::wstring& serverName, const std::wstring& channel)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    Profile* target = nullptr;
+    for (auto& p : settings_.profiles.items)
+        if (presets::EqualNoCase(p.name, profile)) target = &p;
+    if (!target) return false;
+    const std::wstring ch = presets::Sanitize(channel);
+    if (!uid.empty()) // dieselbe Kombination gehoert nur einem Profil
+        for (auto& p : settings_.profiles.items)
+            if (&p != target && p.autoServerUid == uid && presets::EqualNoCase(p.autoChannel, ch)) {
+                p.autoServerUid.clear();
+                p.autoServerName.clear();
+                p.autoChannel.clear();
+            }
+    target->autoServerUid  = uid;
+    target->autoServerName = uid.empty() ? L"" : serverName;
+    target->autoChannel    = uid.empty() ? L"" : ch;
+    SaveLocked();
+    return true;
+}
+
+std::wstring Engine::AutoProfileFor(const std::wstring& uid, const std::wstring& channel)
+{
+    std::wstring match;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        if (!settings_.autoProfile || uid.empty()) return L"";
+        const Profile* anyChannel = nullptr;
+        const Profile* exact      = nullptr;
+        for (const auto& p : settings_.profiles.items) {
+            if (p.autoServerUid != uid) continue;
+            if (p.autoChannel.empty()) anyChannel = anyChannel ? anyChannel : &p;
+            else if (presets::EqualNoCase(p.autoChannel, channel)) exact = &p;
+        }
+        const Profile* pick = exact ? exact : anyChannel;
+        if (!pick || presets::EqualNoCase(pick->name, settings_.profileName)) return L"";
+        match = pick->name;
+    }
+    return ApplyProfile(match) ? match : L"";
 }
 
 std::vector<std::wstring> Engine::ProfileNames()
@@ -852,16 +922,35 @@ void Engine::RenderSources(int frames, bool withApp, bool* music, bool* voices, 
     };
     if (appMusic) prepare(scratch_, equalizer_);
     if (fileMusic) prepare(fileScratch_, fileEq_);
+    // Ducking: Musik leiser, solange ein Clip laeuft bzw. du sprichst (nur die Musik, nicht die Clips)
+    float dg0 = 1.0f, dg1 = 1.0f;
+    {
+        bool  duckNow = false;
+        float depth   = 0.0f;
+        if (duckSoundOn_.load(std::memory_order_relaxed) && sounds_.Active()) {
+            duckNow = true;
+            depth   = duckSoundDb_.load(std::memory_order_relaxed);
+        }
+        if (duckMicOn_.load(std::memory_order_relaxed) && micSpeaking_.load(std::memory_order_relaxed)) {
+            duckNow = true;
+            depth   = std::max(depth, duckMicDb_.load(std::memory_order_relaxed));
+        }
+        duck_.Configure(depth, 30.0f, 600.0f);
+        duck_.Step(duckNow, frames, &dg0, &dg1);
+        duckShown_.store(dg1, std::memory_order_relaxed);
+    }
+    const float trackGain = fileTrackGain_.load(std::memory_order_relaxed);
+    auto        duckAt    = [&](size_t i) { return dg0 + (dg1 - dg0) * static_cast<float>((i >> 1) + 1) / static_cast<float>(frames); };
     for (size_t i = 0; i < need; ++i) {
-        const float sum = (appMusic ? static_cast<float>(scratch_[i]) : 0.0f) + (fileMusic ? static_cast<float>(fileScratch_[i]) : 0.0f);
-        gained_[i]      = mixer::SoftClip(sum * musicGain);
+        const float sum = (appMusic ? static_cast<float>(scratch_[i]) : 0.0f) + (fileMusic ? static_cast<float>(fileScratch_[i]) * trackGain : 0.0f);
+        gained_[i]      = mixer::SoftClip(sum * musicGain * duckAt(i));
     }
     *music = appMusic || fileMusic;
 
     const bool selfHear = !monitor_.load(std::memory_order_relaxed);
     bool       localAny = false;
     if (selfHear && fileMusic && fileMonitor_.load(std::memory_order_relaxed)) {
-        for (size_t i = 0; i < need; ++i) localMix_[i] = mixer::SoftClip(fileScratch_[i] * musicGain);
+        for (size_t i = 0; i < need; ++i) localMix_[i] = mixer::SoftClip(fileScratch_[i] * trackGain * musicGain * duckAt(i));
         localAny = true;
     }
     // Soundboard: laufende Clips kommen ueber die Musik (nach EQ und Musik-Lautstaerke, vor Optimierer/Begrenzer, mit eigener Lautstaerke). Erst allein rendern,
@@ -877,6 +966,16 @@ void Engine::RenderSources(int frames, bool withApp, bool* music, bool* voices, 
                 for (size_t i = 0; i < need; ++i) localMix_[i] = static_cast<int16_t>(std::clamp(static_cast<int>(localMix_[i]) + soundScratch_[i], -32768, 32767));
                 localAny = true;
             }
+        }
+    }
+    // Vorhoeren: nur auf die eigene Ausgabe (auch bei "Mithoeren"), nie ins Mikrofon
+    if (sounds_.PreviewActive()) {
+        if (previewScratch_.size() < need) previewScratch_.resize(need);
+        std::fill(previewScratch_.begin(), previewScratch_.begin() + static_cast<std::ptrdiff_t>(need), static_cast<int16_t>(0));
+        if (sounds_.MixPreview(previewScratch_.data(), frames, soundGain_.load(std::memory_order_relaxed))) {
+            if (!localAny) std::fill(localMix_.begin(), localMix_.begin() + static_cast<std::ptrdiff_t>(need), static_cast<int16_t>(0));
+            for (size_t i = 0; i < need; ++i) localMix_[i] = static_cast<int16_t>(std::clamp(static_cast<int>(localMix_[i]) + previewScratch_[i], -32768, 32767));
+            localAny = true;
         }
     }
     *voices = mixedVoices;
@@ -897,7 +996,7 @@ void Engine::PumpMain()
     while (!pumpQuit_.load()) {
         Sleep(10);
         const bool tsIdle = GetTickCount64() - lastMixTick_.load() > kSilentMs;
-        const bool work   = sounds_.Active() || (fileActive_.load() && !filePaused_.load());
+        const bool work   = sounds_.Active() || sounds_.PreviewActive() || (fileActive_.load() && !filePaused_.load());
         if (!tsIdle || !work) {
             running = false;
             continue;
@@ -935,8 +1034,9 @@ void Engine::Mix(uint64_t schid, short* samples, int frames, int channels, int* 
         std::memset(samples, 0, static_cast<size_t>(frames) * static_cast<size_t>(channels) * sizeof(short));
         *edited |= 1;
     }
-    if (!AppOn() && !fileActive_.load(std::memory_order_relaxed) && !sounds_.Active()) {
+    if (!AppOn() && !fileActive_.load(std::memory_order_relaxed) && !sounds_.Active() && !sounds_.PreviewActive()) {
         holdFrames_ = std::max<int64_t>(0, holdFrames_ - frames);
+        duckShown_.store(1.0f, std::memory_order_relaxed); // keine Musik, nichts abzusenken
         if (micGain_.load() != 1.0f) { // Mikrofon-Lautstaerke gilt auch ohne Musik
             mixer::MixInto(reinterpret_cast<int16_t*>(samples), frames, channels, nullptr, 0, micGain_.load(), 1.0f);
             *edited |= 1;
@@ -949,6 +1049,13 @@ void Engine::Mix(uint64_t schid, short* samples, int frames, int channels, int* 
     ApplyEqIfChanged();
 
     const size_t need = static_cast<size_t>(frames) * 2;
+    // Sprach-Erkennung fuer das Mikrofon-Ducking: am rohen Mikrofonblock, vor Lautstaerke und Musik
+    if (duckMicOn_.load(std::memory_order_relaxed) && !micMuted_.load(std::memory_order_relaxed)) {
+        micSpeaking_ = speech_.Process(reinterpret_cast<const int16_t*>(samples), frames, channels, duckMicThr_.load(std::memory_order_relaxed));
+    } else {
+        if (micSpeaking_.load()) speech_.Reset();
+        micSpeaking_ = false;
+    }
     bool music = false, mixedVoices = false, audible = false;
     RenderSources(frames, true, &music, &mixedVoices, &audible);
 
@@ -1102,7 +1209,206 @@ void Engine::SoundPlay(int slot)
     if (wake_) SetEvent(wake_);
 }
 
-void Engine::SoundStop() { sounds_.StopAll(); }
+void Engine::SoundStop()
+{
+    sounds_.StopAll();
+    sounds_.PreviewStop();
+}
+
+void Engine::SoundPreview(int slot)
+{
+    if (slot < 0 || slot >= kSoundSlots) return;
+    const Soundboard::State st = sounds_.GetState(slot);
+    if (st != Soundboard::State::Ready && st != Soundboard::State::Unloaded && st != Soundboard::State::Loading) return;
+    sounds_.Preview(slot);
+    if (wake_) SetEvent(wake_);
+}
+
+void Engine::SoundPreviewStop() { sounds_.PreviewStop(); }
+
+bool Engine::SoundImport(const std::vector<SoundSlot>& slots, int rows, int cols)
+{
+    rows = std::min(kSoundMaxRows, std::max(1, rows));
+    cols = std::min(kSoundMaxCols, std::max(1, cols));
+    while (rows * cols > kSoundSlots) (rows > cols ? rows : cols)--;
+    std::vector<SoundSlot> fresh(kSoundSlots);
+    for (size_t i = 0; i < slots.size() && i < fresh.size(); ++i) fresh[i] = slots[i];
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        settings_.sounds    = fresh;
+        settings_.soundRows = rows;
+        settings_.soundCols = cols;
+        SaveLocked(); // ein einziger Speichervorgang fuer das ganze Board
+    }
+    sounds_.StopAll();
+    for (int i = 0; i < kSoundSlots; ++i) { // wie beim Start: die ersten Knoepfe sofort laden, der Rest beim ersten Klick
+        if (fresh[i].path.empty()) {
+            sounds_.Clear(i);
+            sounds_.SetVolume(i, 100);
+            continue;
+        }
+        sounds_.SetVolume(i, fresh[i].volPct);
+        if (i < kSoundHotkeys) sounds_.Load(i, fresh[i].path);
+        else sounds_.Register(i, fresh[i].path);
+    }
+    return true;
+}
+
+void Engine::SetDuckSound(bool on, int db)
+{
+    db           = std::min(30, std::max(0, db));
+    duckSoundOn_ = on;
+    duckSoundDb_ = static_cast<float>(db);
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.duckSoundOn = on;
+    settings_.duckSoundDb = db;
+    dirty_                = true;
+}
+
+void Engine::SetDuckMic(bool on, int db, int thresholdDb)
+{
+    db          = std::min(30, std::max(0, db));
+    thresholdDb = std::min(-20, std::max(-70, thresholdDb));
+    duckMicOn_  = on;
+    duckMicDb_  = static_cast<float>(db);
+    duckMicThr_ = static_cast<float>(thresholdDb);
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.duckMicOn          = on;
+    settings_.duckMicDb          = db;
+    settings_.duckMicThresholdDb = thresholdDb;
+    dirty_                       = true;
+}
+
+void Engine::SetNormalize(bool sounds, bool tracks, int targetDb)
+{
+    targetDb = std::min(-6, std::max(-40, targetDb));
+    sounds_.SetNormalize(sounds, static_cast<float>(targetDb));
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        settings_.normSounds   = sounds;
+        settings_.normTracks   = tracks;
+        settings_.normTargetDb = targetDb;
+        dirty_                 = true;
+    }
+    std::lock_guard<std::mutex> pl(playerMutex_);
+    ApplyTrackGainLocked();
+}
+
+// Unter playerMutex_: Angleich-Verstaerkung des laufenden Titels aus der gespeicherten Messung; fehlt sie, wird im Hintergrund gemessen
+void Engine::ApplyTrackGainLocked()
+{
+    float        g = 1.0f;
+    bool         measure = false;
+    std::wstring key = playlist::ToLowerCopy(currentTrackPath_);
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        if (settings_.normTracks && !key.empty()) {
+            measure = true;
+            for (const auto& e : settings_.trackGain)
+                if (e.first == key) {
+                    loudness::Measure m;
+                    m.rmsDb  = e.second;
+                    m.peakDb = e.second + 12.0f; // Spitze nicht gespeichert: typische Kruemmung angenommen
+                    m.valid  = true;
+                    g        = loudness::DbToLinear(loudness::GainDb(m, static_cast<float>(settings_.normTargetDb)));
+                    measure  = false;
+                    break;
+                }
+        }
+    }
+    fileTrackGain_ = g;
+    if (measure) MeasureTrackAsync(currentTrackPath_);
+}
+
+void Engine::MeasureTrackAsync(const std::wstring& path)
+{
+    if (path.empty()) return;
+    {
+        std::lock_guard<std::mutex> lk(loudMutex_);
+        for (const auto& q : loudQueue_)
+            if (q == path) return;
+        loudQueue_.push_back(path);
+    }
+    if (loudRunning_.exchange(true)) return;
+    if (loudThread_.joinable()) loudThread_.join();
+    loudThread_ = std::thread([this] {
+        for (;;) {
+            std::wstring p;
+            {
+                std::lock_guard<std::mutex> lk(loudMutex_);
+                if (loudQueue_.empty() || loudQuit_.load()) {
+                    loudRunning_ = false;
+                    return;
+                }
+                p = loudQueue_.front();
+                loudQueue_.erase(loudQueue_.begin());
+            }
+            std::vector<int16_t> pcm;
+            FilePlayer::DecodeToMemory(p, 30.0, pcm);
+            const auto m = loudness::Analyze(pcm.data(), pcm.size() / 2);
+            if (!m.valid) continue;
+            {
+                std::lock_guard<std::mutex> lk(mutex_);
+                const std::wstring key = playlist::ToLowerCopy(p);
+                bool               found = false;
+                for (auto& e : settings_.trackGain)
+                    if (e.first == key) { e.second = m.rmsDb; found = true; }
+                if (!found) {
+                    if (settings_.trackGain.size() >= 2000) settings_.trackGain.erase(settings_.trackGain.begin());
+                    settings_.trackGain.emplace_back(key, m.rmsDb);
+                }
+                dirty_ = true;
+            }
+            std::lock_guard<std::mutex> pl(playerMutex_);
+            if (playlist::ToLowerCopy(currentTrackPath_) == playlist::ToLowerCopy(p)) ApplyTrackGainLocked();
+        }
+    });
+}
+
+void Engine::SetWindowRect(int which, int x, int y, int w, int h)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    if (which == 0) { settings_.winX = x; settings_.winY = y; }
+    else if (which == 1) { settings_.sbX = x; settings_.sbY = y; settings_.sbW = w; settings_.sbH = h; }
+    else { settings_.miniX = x; settings_.miniY = y; }
+    dirty_ = true;
+}
+
+void Engine::SetUpdateInfo(const std::wstring& latest, long long checkedAt)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.updateLatest    = latest;
+    settings_.updateCheckedAt = checkedAt;
+    dirty_                    = true;
+}
+
+void Engine::SetUpdateCheck(bool on)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.updateCheck = on;
+    dirty_                = true;
+}
+
+void Engine::SetFirstRunDone()
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.firstRunDone = true;
+    dirty_                 = true;
+}
+
+void Engine::SetAutoProfile(bool on)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.autoProfile = on;
+    dirty_                = true;
+}
+
+void Engine::SetTrayIcon(bool on)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.trayIcon = on;
+    dirty_             = true;
+}
 
 void Engine::SetSoundVolume(int pct)
 {
@@ -1206,6 +1512,8 @@ void Engine::StartTrackLocked(int index, double startSec, bool gapless)
         if (wake_) SetEvent(wake_);
     });
     player_->Start(playlist_.items[index].path, startSec);
+    currentTrackPath_ = playlist_.items[index].path;
+    ApplyTrackGainLocked();
     playerPaused_ = false;
     filePaused_   = false;
     playerMsg_.clear();

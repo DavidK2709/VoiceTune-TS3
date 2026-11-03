@@ -227,6 +227,41 @@ int main(int argc, char** argv)
               "aeltester (Slot 2) verworfen: %d %d %d", static_cast<int>(sb.GetState(0)), static_cast<int>(sb.GetState(1)), static_cast<int>(sb.GetState(2)));
         CHECK(sb.CachedBytes() <= clipBytes * 2 + 100, "Budget eingehalten: %zu", sb.CachedBytes());
     }
+    // 7d. Lautstaerke angleichen und Vorhoeren (getrennt von den normalen Stimmen)
+    {
+        Soundboard sb;
+        sb.LoadMemory(0, Sine(1.0, 440, 2000));
+        sb.LoadMemory(1, Sine(1.0, 440, 16000));
+        CHECK(sb.Loudness(1) > sb.Loudness(0) + 17.0f && sb.Loudness(2) == -120.0f, "gemessen: %.1f und %.1f dB", sb.Loudness(0), sb.Loudness(1));
+        sb.Play(0);
+        const int plain = Peak(Render(sb, 24000), 2000, 10000);
+        sb.SetNormalize(true, -18.0f);
+        sb.StopAll();
+        Render(sb, 960);
+        sb.Play(0);
+        const int quietN = Peak(Render(sb, 24000), 2000, 10000);
+        sb.StopAll();
+        Render(sb, 960);
+        sb.Play(1);
+        const int loudN = Peak(Render(sb, 24000), 2000, 10000);
+        sb.StopAll();
+        Render(sb, 960);
+        CHECK(plain < 2100 && quietN > 5000 && quietN < 6600 && loudN > 5000 && loudN < 6600, "angeglichen: ohne %d, leise %d, laut %d", plain, quietN, loudN);
+        sb.SetNormalize(false, -18.0f);
+
+        std::vector<int16_t> mainOut(960 * 2, 0), prev(960 * 2, 0);
+        sb.Preview(0);
+        CHECK(sb.PreviewActive() && !sb.Active(), "Vorhoeren zaehlt nicht als Quelle");
+        sb.Mix(mainOut.data(), 960, 1.0f);
+        CHECK(sb.MixPreview(prev.data(), 960, 1.0f) && Peak(prev) > 1500 && Peak(mainOut) == 0, "Vorhoeren: nur im eigenen Puffer (%d), nie im Hauptpuffer (%d)", Peak(prev), Peak(mainOut));
+        sb.PreviewStop();
+        std::fill(prev.begin(), prev.end(), static_cast<int16_t>(0));
+        sb.MixPreview(prev.data(), 960, 1.0f);
+        CHECK(Peak(prev) == 0 && !sb.PreviewActive(), "Vorhoeren gestoppt");
+        // leerer Knopf: nichts
+        sb.Preview(5);
+        CHECK(!sb.PreviewActive(), "leerer Knopf: kein Vorhoeren");
+    }
     // 8. Aus Dateien laden
     if (argc > 1) {
         const std::string  dir = argv[1];

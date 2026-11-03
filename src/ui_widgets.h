@@ -94,7 +94,7 @@ inline void FillRoundGrad(Graphics& g, const RectF& r, float rad, const Color& t
 }
 
 // Kleine, selbst gezeichnete Symbole (24 x 24 Raster, Linienstil) fuer Seitenleiste und Kartentitel
-enum class Icon { Source, Speaker, Headphones, Person, Eq, Wave, Note, Pads, Chat, Info, Sliders, Send, Gear, Voice, Pop, Pin, Plus, Key };
+enum class Icon { Source, Speaker, Headphones, Person, Eq, Wave, Note, Pads, Chat, Info, Sliders, Send, Gear, Voice, Pop, Pin, Plus, Key, Search, Mini };
 
 inline void DrawIcon(Graphics& g, Icon ic, const RectF& r, const Color& col, float s)
 {
@@ -206,6 +206,14 @@ inline void DrawIcon(Graphics& g, Icon ic, const RectF& r, const Color& col, flo
         g.DrawLine(&pen, P(8, 14), P(16, 14));
         break;
     }
+    case Icon::Search:
+        g.DrawEllipse(&pen, X + 3.5f * u, Y + 3.5f * u, 11 * u, 11 * u);
+        g.DrawLine(&pen, P(13, 13), P(20, 20));
+        break;
+    case Icon::Mini: // kleines Fenster mit Titelleiste
+        StrokeRound(g, RectF(X + 3 * u, Y + 6 * u, 18 * u, 13 * u), 2.5f * u, col, std::max(1.4f, 1.8f * u));
+        g.DrawLine(&pen, P(3.5f, 10.5f), P(20.5f, 10.5f));
+        break;
     case Icon::Gear: { // gefuelltes Zahnrad mit 8 Zaehnen und Loch (Rundungen ueber einen Rand in derselben Farbe)
         GraphicsPath gp(FillModeAlternate);
         PointF       pts[32];

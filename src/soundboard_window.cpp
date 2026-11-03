@@ -254,10 +254,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_CLOSE:
         DestroyWindow(hwnd);
         return 0;
-    case WM_DESTROY:
+    case WM_DESTROY: {
+        WINDOWPLACEMENT wpl{};
+        wpl.length = sizeof(wpl);
+        if (GetWindowPlacement(hwnd, &wpl)) { // Position und Groesse (auch aus dem Zustand "minimiert/maximiert" die normale Lage) fuer das naechste Oeffnen merken
+            const RECT& r = wpl.rcNormalPosition;
+            Engine::Get().SetWindowRect(1, r.left, r.top, r.right - r.left, r.bottom - r.top);
+        }
         KillTimer(hwnd, kTimerId);
         PostQuitMessage(0);
         return 0;
+    }
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
@@ -278,11 +285,23 @@ void WindowThread()
 
     {
         Win   win;
-        HWND  hwnd = CreateWindowExW(0, wc.lpszClassName, L"VoiceTune – Soundboard", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 860, 600, nullptr, nullptr,
-                                     wc.hInstance, &win);
+        const Settings st0 = Engine::Get().GetSettings();
+        int            px = CW_USEDEFAULT, py = CW_USEDEFAULT, pw = 860, ph = 600;
+        bool           restored = false;
+        if (st0.sbX != Settings::kNoPos && st0.sbY != Settings::kNoPos && st0.sbW >= 300 && st0.sbH >= 300) {
+            const RECT want{st0.sbX, st0.sbY, st0.sbX + st0.sbW, st0.sbY + st0.sbH};
+            if (MonitorFromRect(&want, MONITOR_DEFAULTTONULL)) { // nur wenn das Fenster noch auf einem vorhandenen Bildschirm liegt
+                px = st0.sbX;
+                py = st0.sbY;
+                pw = st0.sbW;
+                ph = st0.sbH;
+                restored = true;
+            }
+        }
+        HWND  hwnd = CreateWindowExW(0, wc.lpszClassName, L"VoiceTune – Soundboard", WS_OVERLAPPEDWINDOW, px, py, pw, ph, nullptr, nullptr, wc.hInstance, &win);
         if (hwnd) {
             const float s = win.s;
-            SetWindowPos(hwnd, nullptr, 0, 0, static_cast<int>(820 * s), static_cast<int>(580 * s), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+            if (!restored) SetWindowPos(hwnd, nullptr, 0, 0, static_cast<int>(820 * s), static_cast<int>(580 * s), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
             g_hwnd = hwnd;
             ShowWindow(hwnd, SW_SHOW);
             SetForegroundWindow(hwnd);

@@ -21,6 +21,16 @@ struct Profile {
     bool               mono            = false;
     bool               optimizeForOpus = true;
     bool               opusPreview     = true;
+    // Soundboard-Raster und Gesamtlautstaerke der Sounds
+    int                soundRows   = 2;
+    int                soundCols   = 4;
+    int                soundVolPct = 100;
+    // Platzhalter fuer den Voicechanger (wirkt, sobald er existiert)
+    std::wstring       voicePreset;
+    // Automatik: dieses Profil gilt auf dem Server mit dieser eindeutigen ID (leer = nie automatisch), optional nur in diesem Kanal (Name, leer = jeder)
+    std::wstring       autoServerUid;
+    std::wstring       autoServerName; // nur zur Anzeige
+    std::wstring       autoChannel;
 };
 
 namespace profiles {

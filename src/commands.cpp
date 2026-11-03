@@ -112,6 +112,10 @@ bool RunCommand(const std::string& name, const std::string& arg)
         e.SoundPlay(n - 1);
     }
     else if (name == "soundstop") e.SoundStop();
+    else if (name == "profilenum") {
+        if (!ParseInt(arg, 1, kProfileHotkeys, &n)) return false;
+        e.ApplyProfileNumber(n); // gibt es das n-te Profil nicht, passiert nichts (wie ein leerer Sound-Knopf)
+    }
     else if (name == "soundmonitor") e.SetSoundMonitor(!s.soundMonitor);
     else if (name == "filemonitor") e.SetFileMonitor(!s.fileMonitor);
     else if (name == "playlist") {
@@ -132,6 +136,7 @@ bool RunCommandPath(const std::string& path)
 bool RunHotkey(const std::string& keyword)
 {
     if (keyword.rfind("sound", 0) == 0 && keyword.size() > 5 && keyword != "soundstop") return RunCommand("sound", keyword.substr(5));
+    if (keyword.rfind("profile", 0) == 0 && keyword.size() > 7 && keyword[7] >= '0' && keyword[7] <= '9') return RunCommand("profilenum", keyword.substr(7)); // profile1..profile10
     return RunCommand(keyword);
 }
 
@@ -154,6 +159,10 @@ const std::vector<HotkeyDef>& HotkeyList()
       for (int i = 1; i <= kSoundHotkeys; ++i) {
           text.push_back("sound" + std::to_string(i));
           v.push_back({text.back().c_str(), "VoiceTune: Sound %d abspielen", i});
+      }
+      for (int i = 1; i <= kProfileHotkeys; ++i) {
+          text.push_back("profile" + std::to_string(i));
+          v.push_back({text.back().c_str(), "VoiceTune: Profil %d anwenden", i});
       }
       return v;
     }();

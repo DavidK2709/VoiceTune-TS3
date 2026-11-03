@@ -96,6 +96,10 @@ int main()
     CHECK(RunCommandPath("profile/Zocken%202") && en.GetSettings().musicVolPct == 120, "Profilname mit Leerzeichen");
     CHECK(RunCommand("profile_next") && en.GetSettings().profileName == L"Abend" && RunCommand("profile_next") && en.GetSettings().profileName == L"Zocken 2", "profile_next reihum");
     CHECK(!RunCommandPath("profile/gibt%20es%20nicht"), "unbekanntes Profil");
+    CHECK(RunCommandPath("profilenum/1") && en.GetSettings().profileName == L"Abend" && RunCommandPath("profilenum/2") && en.GetSettings().profileName == L"Zocken 2" && RunCommandPath("profilenum/9") &&
+              en.GetSettings().profileName == L"Zocken 2" && !RunCommandPath("profilenum/0") && !RunCommandPath("profilenum/11") && !RunCommandPath("profilenum/x") && RunHotkey("profile1") &&
+              en.GetSettings().profileName == L"Abend",
+          "profilenum/<n> und Hotkeys profile1..10");
 
     // Quelle
     CHECK(RunCommandPath("source/Spotify.EXE") && en.GetSettings().targetExe == L"spotify.exe" && !RunCommandPath("source/"), "source");
@@ -112,7 +116,7 @@ int main()
 
     // Hotkeys: jedes Schluesselwort der Liste wird verstanden (profile_next hat Profile, sound-Slots sind leer = ok)
     const auto& list = HotkeyList();
-    CHECK(list.size() == 9 + static_cast<size_t>(kSoundHotkeys) + 1, "%d Hotkeys erwartet, nicht %zu", 9 + kSoundHotkeys + 1, list.size());
+    CHECK(list.size() == 9 + static_cast<size_t>(kSoundHotkeys) + 1 + kProfileHotkeys, "%d Hotkeys erwartet, nicht %zu", 9 + kSoundHotkeys + 1 + kProfileHotkeys, list.size());
     for (const auto& h : list) {
         CHECK(h.keyword && h.description && std::string(h.description).size() > 5 && std::string(h.description).size() < 127, "Beschreibung von %s", h.keyword);
         CHECK(RunHotkey(h.keyword), "Hotkey '%s' wird nicht verstanden", h.keyword);

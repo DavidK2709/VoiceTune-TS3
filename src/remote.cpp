@@ -2,12 +2,14 @@
 #include <windows.h>
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
 #include <string>
 #include <thread>
 #include <vector>
 #include "commands.h"
 #include "engine.h"
 #include "remote.h"
+#include "update_check.h"
 
 namespace {
 SOCKET            g_listen = INVALID_SOCKET;
@@ -42,6 +44,31 @@ std::string JsonStrArray(const std::vector<std::wstring>& v) {
     return o + "]";
 }
 
+// Zusatzfelder von /state (additiv): laufende Sounds, Profil-Position, Datei-Player-Fortschritt, Ducking
+std::string StateExtraJson(Engine& e, const Settings& s, const PlayerSnapshot& p) {
+    std::string    sounds;
+    int            playing = 0;
+    const auto     all     = e.GetSounds();
+    for (size_t i = 0; i < all.size(); ++i)
+        if (all[i].position >= 0) {
+            sounds += std::string(playing ? "," : "") + std::to_string(i + 1);
+            ++playing;
+        }
+    const auto names = e.ProfileNames();
+    int        index = 0;
+    for (size_t i = 0; i < names.size(); ++i)
+        if (names[i] == s.profileName) index = static_cast<int>(i) + 1;
+    std::string title;
+    if (p.current >= 0 && p.current < static_cast<int>(p.items.size())) title = WideToUtf8(p.items[p.current].title);
+    char pos[96];
+    std::snprintf(pos, sizeof(pos), "\"position\":%.1f,\"duration\":%.1f", p.position, p.duration);
+    return ",\"soundPlaying\":" + std::string(playing > 0 ? "true" : "false") + ",\"soundsActive\":[" + sounds + "]" +
+           ",\"profileIndex\":" + std::to_string(index) + ",\"profileCount\":" + std::to_string(names.size()) +
+           ",\"file\":{\"title\":\"" + JsonEsc(title) + "\"," + pos + "}" +
+           ",\"ducking\":" + (e.DuckGain() < 0.95f ? "true" : "false") +
+           ",\"update\":" + (updatecheck::NewerAvailable() ? "true" : "false");
+}
+
 std::string StateJson() {
     Engine&        e = Engine::Get();
     Settings       s = e.GetSettings();
@@ -57,7 +84,7 @@ std::string StateJson() {
            ",\"playlist\":\"" + JsonEsc(WideToUtf8(s.playlistName)) + "\"" +
            ",\"profile\":\"" + JsonEsc(WideToUtf8(s.profileName)) + "\"" +
            ",\"preset\":\"" + JsonEsc(WideToUtf8(s.eqPresetName)) + "\"" +
-           ",\"source\":\"" + JsonEsc(WideToUtf8(e.SourceLabel())) + "\"}";
+           ",\"source\":\"" + JsonEsc(WideToUtf8(e.SourceLabel())) + "\"" + StateExtraJson(e, s, p) + "}";
 }
 
 // Namen aller EQ-Presets (mitgelieferte zuerst, dann eigene)

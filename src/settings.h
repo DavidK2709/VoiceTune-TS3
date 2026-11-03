@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <climits>
 #include <string>
 #include <vector>
 
@@ -83,6 +84,37 @@ struct Settings {
 
     // Seite "Einstellungen": Bereich "Erweitert" aufgeklappt (Musikmodus, Mikro-Gate, Opus) - Standard zu
     bool advancedOpen = false;
+
+    // Fensterpositionen (kNoPos = noch nie gespeichert): Hauptfenster, Soundboard-Fenster (Position und Groesse), Mini-Fenster
+    static constexpr int kNoPos = INT_MIN;
+    int winX = kNoPos, winY = kNoPos;
+    int sbX = kNoPos, sbY = kNoPos, sbW = 0, sbH = 0;
+    int miniX = kNoPos, miniY = kNoPos;
+
+    // Update-Hinweis: Nach neuer Version suchen, zuletzt gesehene neueste Version und Zeitpunkt der letzten Abfrage (Sekunden seit 1970)
+    bool         updateCheck     = true;
+    std::wstring updateLatest;
+    long long    updateCheckedAt = 0;
+
+    // Erststart-Systemcheck schon gezeigt
+    bool firstRunDone = false;
+
+    // Ducking: Musik leiser, solange ein Sound laeuft bzw. du sprichst (Tiefe in dB, positiv = Absenkung)
+    bool duckSoundOn  = true;
+    int  duckSoundDb  = 12;
+    bool duckMicOn    = false;
+    int  duckMicDb    = 10;
+    int  duckMicThresholdDb = -45; // Sprachschwelle (Pegel des Mikrofons), -70..-20
+
+    // Lautstaerke angleichen: Sounds bzw. Datei-Titel auf einen Zielpegel (dB, RMS) bringen; je Titelpfad die gemessene Lautheit
+    bool normSounds   = false;
+    bool normTracks   = false;
+    int  normTargetDb = -18;
+    std::vector<std::pair<std::wstring, float>> trackGain; // Pfad (klein geschrieben) -> gemessene Lautheit (RMS, dB)
+
+    // Profil automatisch nach Server/Kanal waehlen; Tray-Symbol
+    bool autoProfile = true;
+    bool trayIcon    = false;
 };
 
 // Schnappschuss der aktuellen Einstellungen als Profil (Name leer, wird beim Speichern gesetzt)
@@ -103,6 +135,9 @@ inline Profile ProfileFromSettings(const Settings& s)
     p.mono            = s.mono;
     p.optimizeForOpus = s.optimizeForOpus;
     p.opusPreview     = s.opusPreview;
+    p.soundRows       = s.soundRows;
+    p.soundCols       = s.soundCols;
+    p.soundVolPct     = s.soundVolPct;
     return p;
 }
 
@@ -111,7 +146,7 @@ inline bool SameProfile(const Profile& a, const Profile& b)
 {
     return a.targetExe == b.targetExe && a.musicVolPct == b.musicVolPct && a.micVolPct == b.micVolPct && a.monitor == b.monitor && a.monitorDelayMs == b.monitorDelayMs &&
            a.eqEnabled == b.eqEnabled && a.eqBands == b.eqBands && presets::CurvesMatch(a.eqGains, b.eqGains, 0.05f) && a.quality == b.quality && a.mono == b.mono &&
-           a.optimizeForOpus == b.optimizeForOpus && a.opusPreview == b.opusPreview;
+           a.optimizeForOpus == b.optimizeForOpus && a.opusPreview == b.opusPreview && a.soundRows == b.soundRows && a.soundCols == b.soundCols && a.soundVolPct == b.soundVolPct;
 }
 
 // section: Abschnittsname der INI ("VoiceTune"; die Vorgaengerversion nutzte "AppAudioMixer")

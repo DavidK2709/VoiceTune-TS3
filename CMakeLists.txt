@@ -41,12 +41,16 @@ add_library(VoiceTune SHARED
     src/soundboard_window.cpp
     src/voicechanger.cpp
     src/voicechanger_page.cpp
+    src/update_check.cpp
+    src/mini_window.cpp
+    src/tray.cpp
+    src/board_file.cpp
     src/commands.cpp
     src/remote.cpp
     src/voicetune.rc
     src/plugin.cpp)
 target_include_directories(VoiceTune PRIVATE third_party/ts3sdk src ${CMAKE_BINARY_DIR})
-target_link_libraries(VoiceTune PRIVATE ole32 oleaut32 uuid user32 gdi32 gdiplus shell32 shlwapi comdlg32 ${OPUS_LIB} mfuuid ws2_32 -static -static-libgcc -static-libstdc++)
+target_link_libraries(VoiceTune PRIVATE ole32 oleaut32 uuid user32 gdi32 gdiplus shell32 shlwapi comdlg32 ${OPUS_LIB} mfuuid ws2_32 winhttp -static -static-libgcc -static-libstdc++)
 set_target_properties(VoiceTune PROPERTIES PREFIX "" OUTPUT_NAME "VoiceTune_win64")
 
 # --- Standalone-Test (Capture ohne TeamSpeak) --------------------------------
@@ -117,3 +121,8 @@ target_link_libraries(commands_test PRIVATE ole32 oleaut32 uuid user32 winmm mfu
 add_executable(i18n_test tools/i18n_test.cpp src/i18n.cpp)
 target_include_directories(i18n_test PRIVATE src)
 target_link_libraries(i18n_test PRIVATE -static -static-libgcc -static-libstdc++)
+
+# --- Ducker, Lautheit, Soundboard-Datei (reine Logik) ----------------------------------------------------
+add_executable(logic_test tools/logic_test.cpp src/board_file.cpp)
+target_include_directories(logic_test PRIVATE src)
+target_link_libraries(logic_test PRIVATE -static -static-libgcc -static-libstdc++)

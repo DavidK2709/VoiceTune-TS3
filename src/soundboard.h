@@ -13,6 +13,8 @@
 #include <thread>
 #include <vector>
 
+#include "loudness.h"
+
 class Soundboard {
 public:
     static constexpr int    kSlots       = 400;
@@ -57,6 +59,16 @@ public:
     // Audio-Thread: addiert alle laufenden Stimmen (mit Verstaerkung `gain`) in `io` (interleaved Stereo, Saettigung). true = es wurde etwas gemischt.
     bool Mix(int16_t* io, int frames, float gain);
 
+    // Lautstaerke angleichen: jeder Clip wird beim Ausloesen auf targetDb (RMS) gebracht (Messung beim Laden, +-12 dB, nie ueber -0,5 dBFS).
+    void  SetNormalize(bool on, float targetDb) { normOn_ = on; normTarget_ = targetDb; }
+    float Loudness(int slot) const; // gemessene Lautheit in dB (RMS), -120 = unbekannt
+
+    // Vorhoeren: ein Clip getrennt von den normalen Stimmen, dessen Ausgabe der Aufrufer nur lokal hoerbar macht (MixPreview), nie ins Mikrofon.
+    void Preview(int slot);   // jeder Thread; verworfene Clips werden erst geladen
+    void PreviewStop() { previewStop_ = true; }
+    bool PreviewActive() const { return previewLive_.load(std::memory_order_relaxed) || previewTrigger_.load(std::memory_order_relaxed) > 0; }
+    bool MixPreview(int16_t* io, int frames, float gain); // Audio-Thread
+
 private:
     struct Slot {
         std::shared_ptr<const std::vector<int16_t>> clip; // nur ueber std::atomic_load/_store
@@ -67,6 +79,9 @@ private:
         std::atomic<int>                            volume{100};       // Prozent
         std::atomic<uint64_t>                       lastUse{0};        // fuer die Verdraengung (groesser = juenger)
         std::atomic<bool>                           playWhenReady{false};
+        std::atomic<bool>                           previewWhenReady{false};
+        std::atomic<float>                          rmsDb{-120.0f};    // gemessene Lautheit (bleibt nach dem Verwerfen)
+        std::atomic<float>                          peakDb{-120.0f};
         std::atomic<size_t>                         size{0};           // Bytes des geladenen Clips
         std::atomic<int64_t>                        playPos{-1};       // Frames der laufenden Stimme dieses Slots, -1 = keine (vom Audio-Thread gesetzt)
         std::wstring                                path;              // unter mutex_
@@ -96,6 +111,13 @@ private:
     std::atomic<size_t>     bytes_{0};
     std::atomic<size_t>     budget_{kBudgetBytes};
     std::atomic<uint64_t>   useCounter_{0};
+    std::atomic<bool>       normOn_{false};
+    std::atomic<float>      normTarget_{-18.0f};
+    std::atomic<int>        previewTrigger_{0}; // Knopf + 1, vom Audio-Thread abgeholt
+    std::atomic<bool>       previewStop_{false};
+    std::atomic<bool>       previewLive_{false};
+    Voice                   preview_;           // nur Audio-Thread
+    float                   NormMul(const Slot& s) const;
 
     std::mutex              mutex_; // Ladeauftraege und Pfade
     std::condition_variable cv_;

@@ -32,6 +32,12 @@ Antwort:
 | `profile` | Name des gewählten Profils (leer = keines) |
 | `preset` | Name des gewählten Equalizer-Presets (leer = eigene Kurve) |
 | `source` | Name der gewählten App (für „Musik einspielen“) |
+| `soundPlaying` | Mindestens ein Soundboard-Knopf spielt gerade |
+| `soundsActive` | Liste der Knopfnummern (1–400), die gerade spielen, z. B. `[3,12]` |
+| `profileIndex` / `profileCount` | Position des gewählten Profils in der Liste (1-basiert, 0 = keines) und Anzahl der Profile |
+| `file` | Datei-Player: `{"title":"…","position":12.3,"duration":201.0}` (Sekunden, `duration` −1 = unbekannt) |
+| `ducking` | Die Musik ist gerade durch Ducking abgesenkt |
+| `update` | Eine neuere Version von VoiceTune ist verfügbar |
 
 ## Befehle
 
@@ -54,6 +60,7 @@ Jeder Befehl antwortet mit dem neuen Zustand (gleiches JSON wie `/state`).
 | `preset/<Name>` | Equalizer-Preset wählen (mitgelieferte: `Flach`, `Bass+`, `Höhen+`, `Sprache`, `Loudness`, `V-Form`, oder eigene Filter; Groß-/Kleinschreibung egal) |
 | `profile/<Name>` | Profil anwenden (Quelle, Lautstärken, Mithören, Equalizer, Qualität, Opus) |
 | `profile_next` | Nächstes Profil reihum |
+| `profilenum/<1-10>` | N-tes Profil der Liste (wie in `/profiles`) anwenden; gibt es es nicht, passiert nichts |
 | `source/<exe>` | Audio-Quelle wählen, z.B. `source/spotify.exe` |
 | `sound/<1-400>` | Soundboard-Clip sofort abspielen (leere Plätze tun nichts; „Musik einspielen“ bleibt, wie es ist) |
 | `soundmonitor` | „Selbst hören“ für Soundboard-Clips ein/aus |

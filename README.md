@@ -88,6 +88,8 @@ Bei Browsern wird der gesamte Browser-Ton aufgenommen (nicht nur ein Tab).
 - Ein **Raster aus frei belegbaren Knöpfen** wie bei RP Soundboard: oben stellst du **Zeilen** und **Spalten** (bis 20 × 20, höchstens 400 Knöpfe) mit − / + ein und ob die **Tastenkürzel auf den Knöpfen** angezeigt werden. Standard: 2 × 4. Passt das Raster nicht ins Fenster, scrollt es.
 - **Knopf anlegen:** einen leeren Knopf (nur ein „+“) anklicken oder eine Audio-Datei darauf ziehen (jedes Format der Dateien-Seite, Clips bis 30 s) – es öffnet sich der **Editor** mit *Name*, *Datei*, *Farbe*, *Lautstärke* (0–200 %, pro Knopf) und *Tastenkürzel*. Mehrere Dateien auf einmal füllen freie Knöpfe der Reihe nach (ohne Editor, Name = Dateiname).
 - **Klick** spielt den Clip über Musik und Mikrofon (bis zu 8 gleichzeitig; derselbe Clip startet von vorn). Während er läuft, zeigt der Knopf einen Fortschrittsbalken und „Position / Dauer“. **Rechtsklick** öffnet den Editor (dort auch *Entfernen*). **Ziehen** eines Knopfes auf einen anderen tauscht bzw. verschiebt ihn. **Alle stoppen** beendet alles; der Regler **Lautstärke** unten gilt für alle Knöpfe zusätzlich.
+- **Suchen:** das Feld links unten in der Werkzeugleiste dimmt alle Knöpfe, deren Name nicht passt. **Vorhören:** **Strg + Klick** auf einen Knopf (oder *Vorhören* im Editor) spielt den Clip **nur auf deiner eigenen Ausgabe**, nie ins Mikrofon.
+- **Export / Import:** *Export …* speichert Raster und alle Knöpfe (Name, Farbe, Lautstärke, Pfad) als `.vtboard`-Datei, *Import …* lädt sie wieder (nach Rückfrage; ersetzt das aktuelle Board). Pfade werden relativ zur Datei gespeichert, so wandert ein Board samt Sound-Ordner auf einen anderen Rechner. Die Audiodateien selbst werden nicht kopiert.
 - **Tastenkürzel:** die ersten 64 Knöpfe haben je einen TeamSpeak-Hotkey (*Sound 1 … 64*). Im Editor legst du ihn per **ändern …** fest (öffnet den Aufnahme-Dialog von TeamSpeak), auf dem Knopf steht er, wenn die Anzeige an ist. Alle Hotkeys findest du außerdem unter *Einstellungen → Hotkeys → Plugins → VoiceTune*.
 - **Abkoppeln:** der Knopf rechts oben (und *Plugins → VoiceTune → Soundboard öffnen* oder der Knopf auf der Seite *Quelle*) öffnet das Soundboard als **eigenes, frei skalierbares Fenster** – es bleibt offen, auch wenn du das Hauptfenster schließt. Dort gibt es zusätzlich den Schalter **Immer oben** (Fenster bleibt vor anderen Fenstern).
 - Clips funktionieren auch ohne Musikquelle und bei stummem Mikrofon; sie gehen durch Optimierung/Begrenzer und werden beim Mithören mitgehört. „Musik einspielen“ bleibt dabei, wie es ist.
@@ -96,19 +98,32 @@ Bei Browsern wird der gesamte Browser-Ton aufgenommen (nicht nur ein Tab).
   und nach der Uhr weiter (du hörst sie selbst); gesendet wird in dieser Zeit nichts, und es wird auch nichts später nachgeholt.
 - Ablage: Pfade, Namen, Farben und Lautstärken stehen in der INI (Abschnitt `[Sounds]`, ein Eintrag je Knopf). Die ersten 64 Clips werden beim Start geladen, die übrigen beim ersten Klick (kurze Verzögerung); bei sehr vielen Clips verwirft das Plugin die am längsten nicht gespielten (Speichergrenze 192 MB) und lädt sie beim nächsten Klick neu. Per Stream Deck: `/cmd/sound/<1-400>`.
 
+### Mini-Fenster und Tray-Symbol
+- **Mini-Fenster** (Symbol links neben dem Zahnrad oder *Plugins → VoiceTune → Mini-Fenster öffnen*): ein kleines, rahmenloses Fenster, das immer im Vordergrund bleibt – mit Quelle, Musik-Lautstärke, Mikrofon-stumm-Knopf und „Musik einspielen“. Am Hintergrund ziehen verschiebt es, die Position wird gemerkt, Esc oder × schließt.
+- **Tray-Symbol** (Einstellungen → Allgemein → *Tray-Symbol anzeigen*, Standard aus): Linksklick öffnet die Steuerung, Rechtsklick ein Menü (Musik ein/aus, Mikrofon stumm, nächstes Profil, Soundboard, Mini-Fenster).
+
 ### Reiter „Voicechanger“ (Entwicklung)
 Platzhalter für den Voicechanger. Der Spielbereich des Voicechanger-Entwicklers ist bewusst von der restlichen Oberfläche getrennt: die Seite in `src/voicechanger_page.{h,cpp}`, die Klangverarbeitung in `src/voicechanger.{h,cpp}` (Anleitung zum Einhängen in die Engine steht im Kopf von `voicechanger.h`). `config_dialog.cpp` ruft die Seite nur zum Zeichnen auf (Zweig „Seite 4“).
 
 ### Einstellungen (Zahnrad-Popup)
-Das Zahnrad öffnet das Popup, ein zweiter Klick auf das Zahnrad, ein Klick neben das Panel oder **Esc** schließt es. Zwei Spalten, oben das Häufige, unten ein einklappbarer Bereich **Erweitert** (ob er offen ist, merkt sich das Plugin; Standard: zu).
+Das Zahnrad öffnet das Popup, ein zweiter Klick auf das Zahnrad, ein Klick neben das Panel oder **Esc** schließt es. Oben drei Reiter: **Allgemein**, **Audio**, **Profile**. Ein kleiner blauer Punkt am Zahnrad zeigt, dass eine neue Version bereitsteht.
 - **Allgemein**: die **Oberflächensprache** (*Automatisch* richtet sich nach Windows – nicht Deutsch → English –, *Deutsch*, *English*; wirkt sofort) und der Knopf **Hotkeys festlegen …**, der die Hotkey-Einstellungen von TeamSpeak öffnet.
   Die Plugin-Menüeinträge im Plugins-Menü und die Hotkey-Beschreibungen folgen der Sprache erst beim nächsten Start von TeamSpeak.
 - **Senden**:
   - **Musik immer senden**: überträgt die Musik auch ohne Push-to-Talk/Sprachaktivierung.
   - **Mono einspielen** mischt die Musik als Mono ein.
   - **Qualität** (plugin-intern): *Niedrige Latenz* (40 ms Puffer), *Ausgewogen* (60 ms), *Stabil* (140 ms, für wackelige Rechner/Apps).
+- **Wartung** (Reiter Allgemein):
+  - **Diagnose kopieren** legt einen Text in die Zwischenablage: Versionen, Einstellungen (**ohne Dateipfade und Namen**), Status, Kanal-Codec, Stream-Deck-Port, die letzten Logzeilen. Den schickst du bei Problemen mit.
+  - **Systemcheck …** zeigt eine Ampel für Aufnahme (Pro-App-Aufnahme ab Windows 10 Version 2004), TeamSpeak-Kanal-Codec (*Opus Voice* ist mono → gelb), Stream-Deck-Schnittstelle und Version. Er öffnet sich beim allerersten Start von selbst.
+  - **Nach Updates suchen** (Standard an): fragt höchstens alle 12 Stunden bei GitHub nach dem neuesten Release; ist es neuer, steht „Neue Version …“ (anklickbar) in der Fußzeile und am Zahnrad. Es wird nichts heruntergeladen oder installiert.
+  - **Tray-Symbol anzeigen** (Standard aus).
+- **Fenster merken sich Position und Größe** (Hauptfenster, Soundboard-Fenster, Mini-Fenster); liegt der gemerkte Platz nicht mehr auf einem Bildschirm, öffnen sie am Standardort.
 - **Info**: zeigt, ob die Stream-Deck-Schnittstelle läuft („aktiv · Port 19470“) oder der Port belegt ist, dazu die Plugin-Version, die Autoren (**Dave Swift × Michael Schulz**, in Schreibschrift; dezent auch unten rechts in der Fußzeile) und das Motto *Your Sound. Your Voice. Your Way. Your Tune!*.
-- **Erweitert** (aufklappen mit Klick auf die Zeile): Dinge, die man normalerweise nicht anfasst – deshalb hier und nicht auf den Hauptseiten. Geht beim Musikmodus etwas schief, erscheint auf der Seite *Quelle & Mix* ein orangefarbener Hinweis, der hierher verweist.
+- **Audio** (Reiter):
+  - **Ducking – Musik automatisch leiser:** *Bei Sounds* (Standard an, −12 dB): solange ein Soundboard-Knopf läuft, wird nur die Musik abgesenkt und kommt danach weich zurück. *Wenn du sprichst* (Standard aus, −10 dB): das Plugin erkennt Sprache am Mikrofonpegel (einstellbare Schwelle, Standard −45 dB, 400 ms Nachlauf) und senkt die Musik ab.
+  - **Lautstärke angleichen** (Standard aus): *Sounds angleichen* misst jeden Clip beim Laden, *Titel angleichen* misst Datei-Titel beim ersten Abspielen im Hintergrund (die Messung wird gemerkt); beides bringt sie auf den **Zielpegel** (Standard −18 dB). Die Verstärkung ist auf ±12 dB begrenzt und übersteuert nie.
+  - **Erweitert** (immer sichtbar): Dinge, die man normalerweise nicht anfasst – deshalb hier und nicht auf den Hauptseiten. Geht beim Musikmodus etwas schief, erscheint auf der Seite *Quelle & Mix* ein orangefarbener Hinweis, der hierher verweist.
   - **Musikmodus** (Standard: an, bitte eingeschaltet lassen): TeamSpeak ruft das Plugin *nach* seiner Vorverarbeitung auf. Die Sprachaktivierung startet daher nie von selbst eine Übertragung, nur weil
     das Plugin Musik einmischt: Die Musik käme erst durch, wenn du einmal sprichst. Solange Musik läuft, schaltet das Plugin deshalb – wie ein Soundboard-Plugin – auf **Dauersenden**:
     Sprachaktivierung aus, Mikrofon-Eingang aktiv (auch bei Push-to-Talk), Änderungen sofort an TS3 übergeben; das alles im Mikrofon-Callback. Dazu schaltet es
@@ -128,8 +143,11 @@ Das Zahnrad öffnet das Popup, ein zweiter Klick auf das Zahnrad, ein Klick nebe
     Auf die tatsächlich gesendete Musik hat sie keinen Einfluss.
     **Grenze:** Ist der Kanal auf *Opus Voice* gestellt, bleibt die Übertragung **mono** (SDK: 48 kHz, mono) – für alle Hörer. Stereo kommt nur mit dem Kanal-Codec *Opus Music* an.
 
+### Profile: Automatik
+Im Reiter **Profile** koppelst du das gewählte Profil an einen Server (eindeutige Server-ID, bleibt auch bei Umbenennung stabil) und optional einen Kanal: *Mit diesem Server koppeln* / *Server + Kanal koppeln* (du musst verbunden sein), *Kopplung lösen*. Beim Verbinden, Server-Tab-Wechsel und Kanalwechsel wendet das Plugin das passende Profil an und meldet es im Chat (ein Profil mit Kanal geht vor dem für den ganzen Server). *Profil nach Server und Kanal wählen* schaltet die Automatik ab. Außerdem sind die Profile auch per Hotkey erreichbar: *Profil 1 … 10 anwenden*. Ein Profil speichert jetzt auch Soundboard-Raster und Sound-Lautstärke.
+
 ### Hotkeys
-Im TeamSpeak-Hotkey-Dialog (*Einstellungen → Hotkeys → Plugins → VoiceTune* – oder über „Hotkeys …“ im Fenster) gibt es: Musik an/aus, Mikrofon stumm/laut, Musik lauter/leiser, Datei-Player Play/Pause, nächster/vorheriger Titel, Mithören an/aus, nächstes Profil, Sound 1–64, Alle Sounds stoppen.
+Im TeamSpeak-Hotkey-Dialog (*Einstellungen → Hotkeys → Plugins → VoiceTune* – oder über „Hotkeys …“ im Fenster) gibt es: Musik an/aus, Mikrofon stumm/laut, Musik lauter/leiser, Datei-Player Play/Pause, nächster/vorheriger Titel, Mithören an/aus, nächstes Profil, Profil 1–10 anwenden, Sound 1–64, Alle Sounds stoppen.
 Beim Stumm-Hotkey erscheint eine Chat-Zeile „MIKROFON STUMM/AKTIV“.
 
 ### Stream Deck / Fernsteuerung
@@ -148,7 +166,8 @@ build\mixer_test.exe                               # Mixer / Ring-Buffer
 build\eq_test.exe                                  # Equalizer (10/31/61 Bänder), FFT, Tonspur-Puffer
 build\settings_test.exe                            # INI-Roundtrip (Einstellungen, eigene Presets, Profile, Sounds)
 build\commands_test.exe                            # gemeinsame Befehle (Hotkeys, Stream-Deck-API)
-build\soundboard_test.exe build\pt                # Soundboard (Mischen, Stimmen, Laden aus Dateien)
+build\soundboard_test.exe build\pt                # Soundboard (Mischen, Stimmen, Laden aus Dateien, Angleichen, Vorhören)
+build\logic_test.exe                               # Ducking, Sprach-Erkennung, Lautheit, Soundboard-Datei (.vtboard), Update-Vergleich
 build\nowplaying_test.exe                          # Titelbereinigung für „Titel melden“
 build\i18n_test.exe                                # Übersetzungstabelle Deutsch/English
 build\playlist_test.exe                            # Wiedergabeliste

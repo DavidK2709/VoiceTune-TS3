@@ -295,6 +295,13 @@ int main(int argc, char** argv)
                 std::printf("Screenshot %dx%d -> %s\n", cw, ch, path.c_str());
             };
             shoot(argv[3]);
+            {   // Erststart: die Systemcheck-Karte liegt ueber allem (frische INI) - fotografieren und wegklicken
+                shoot(std::string(argv[3]) + "check.bmp");
+                SendMessageW(w, WM_MOUSEMOVE, 0, MAKELPARAM(20, 600));
+                SendMessageW(w, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(20, 600));
+                SendMessageW(w, WM_LBUTTONUP, 0, MAKELPARAM(20, 600));
+                Sleep(300);
+            }
             auto shootHwnd = [&](HWND hw, const std::string& path) { // Foto eines beliebigen Fensters dieses Prozesses
                 RECT r;
                 GetWindowRect(hw, &r);
@@ -416,46 +423,95 @@ int main(int argc, char** argv)
                 };
 
                 shotPages("set_de");                       // alle 5 Seiten, Deutsch
-                click(gearX, gearY);                       // Zahnrad: Einstellungs-Popup auf
+                click(gearX, gearY);                       // Zahnrad: Einstellungs-Popup auf (Reiter Allgemein)
                 Sleep(500);
-                shoot(base + "set_depop.bmp");             // Popup, "Erweitert" zu
-                click(506, 442);                           // "Erweitert" aufklappen
-                Sleep(500);
-                shoot(base + "set_deadv.bmp");
+                shoot(base + "set_depop.bmp");
+                click(300, 87);                            // Reiter Audio
+                Sleep(300);
+                shoot(base + "set_deaudio.bmp");
+                click(428, 87);                            // Reiter Profile
+                Sleep(300);
+                shoot(base + "set_deprof.bmp");
+                click(172, 87);                            // zurueck auf Allgemein
+                Sleep(200);
 
-                // Jedes Element bedienen
-                click(306, 152);                           // Sprache: Deutsch
-                click(186, 152);                            // Sprache: Automatisch
-                click(426, 152);                           // Sprache: English
-                click(306, 235);                           // Hotkeys festlegen ...
-                click(856, 121);                           // Musik immer senden aus
-                click(856, 171);                           // Mono an
-                click(586, 246);                           // Qualitaet: niedrige Latenz
-                click(456, 487);                           // Musikmodus aus
-                click(356, 537);                           // Mikro-Gate irgendwo in der Mitte
-                click(856, 487);                           // Opus optimieren aus
-                click(856, 537);                           // Opus-Vorschau aus
+                // Reiter Allgemein: jedes Element bedienen
+                click(306, 192);                           // Sprache: Deutsch
+                click(186, 192);                           // Sprache: Automatisch
+                click(426, 192);                           // Sprache: English
+                click(306, 275);                           // Hotkeys festlegen ...
+                click(856, 161);                           // Musik immer senden aus
+                click(856, 211);                           // Mono an
+                click(586, 286);                           // Qualitaet: niedrige Latenz
+                click(856, 373);                           // Nach Updates suchen: aus
+                // Reiter Audio
+                click(300, 87);
+                click(456, 443);                           // Musikmodus aus
+                click(356, 493);                           // Mikro-Gate irgendwo in der Mitte
+                click(856, 443);                           // Opus optimieren aus
+                click(856, 493);                           // Opus-Vorschau aus
+                click(456, 163);                           // Ducking bei Sounds: aus
+                click(300, 219);                           // Absenkung verstellen
+                click(456, 259);                           // Ducking beim Sprechen: an
+                click(856, 163);                           // Sounds angleichen: an
+                click(856, 213);                           // Titel angleichen: an
                 Sleep(1800);                               // Einstellungen werden im Sekundentakt gespeichert
+                auto sval = [&](const char* sec, const char* key, int def) { return static_cast<int>(GetPrivateProfileIntA(sec, key, def, ini.c_str())); };
                 check(val("Language", -1) == 2, "Sprache English gespeichert");
                 check(val("AlwaysSend", -1) == 0, "Musik immer senden aus");
                 check(val("Mono", -1) == 1, "Mono an");
                 check(val("Quality", -1) == 0, "Qualitaet niedrige Latenz");
+                check(sval("Update", "Check", -1) == 0, "Update-Suche aus");
                 check(val("MusicMode", -1) == 0, "Musikmodus aus");
                 check(val("GateDb", 0) > -70 && val("GateDb", 0) < -25 && val("GateDb", 0) != -50, "Mikro-Gate verstellt");
                 check(val("OptimizeForOpus", -1) == 0, "Opus optimieren aus");
                 check(val("OpusPreview", -1) == 0, "Opus-Vorschau aus");
-                check(val("AdvancedOpen", -1) == 1, "Erweitert aufgeklappt gespeichert");
+                check(sval("Ducking", "SoundOn", -1) == 0 && sval("Ducking", "SoundDb", 12) != 12, "Ducking bei Sounds aus, Absenkung verstellt");
+                check(sval("Ducking", "MicOn", -1) == 1, "Ducking beim Sprechen an");
+                check(sval("Loudness", "Sounds", -1) == 1 && sval("Loudness", "Tracks", -1) == 1, "Angleichen: Sounds und Titel an");
+                shoot(base + "set_enaudio.bmp");           // Englisch, alles umgestellt
 
-                shoot(base + "set_enadv.bmp");             // Englisch, aufgeklappt, alles umgestellt
-                click(506, 442);                           // Erweitert zuklappen
-                Sleep(1400);
-                check(val("AdvancedOpen", -1) == 0, "Erweitert zugeklappt gespeichert");
+                // Diagnose kopieren (Zwischenablage danach wiederherstellen) und Systemcheck von Hand
+                click(172, 87);
+                std::wstring savedClip;
+                if (OpenClipboard(nullptr)) {
+                    if (HANDLE hd = GetClipboardData(CF_UNICODETEXT))
+                        if (const wchar_t* p = static_cast<const wchar_t*>(GlobalLock(hd))) { savedClip = p; GlobalUnlock(hd); }
+                    CloseClipboard();
+                }
+                click(252, 378);                           // Diagnose kopieren
+                Sleep(300);
+                std::wstring clip;
+                if (OpenClipboard(nullptr)) {
+                    if (HANDLE hd = GetClipboardData(CF_UNICODETEXT))
+                        if (const wchar_t* p = static_cast<const wchar_t*>(GlobalLock(hd))) { clip = p; GlobalUnlock(hd); }
+                    CloseClipboard();
+                }
+                check(clip.find(L"VoiceTune 0.8") != std::wstring::npos && clip.find(L"[Einstellungen]") != std::wstring::npos && clip.find(L"[Log]") != std::wstring::npos &&
+                          clip.find(L"C:\\") == std::wstring::npos,
+                      "Diagnose in der Zwischenablage (ohne Pfade)");
+                if (OpenClipboard(nullptr)) { // Zwischenablage des Nutzers zuruecksetzen
+                    EmptyClipboard();
+                    if (!savedClip.empty())
+                        if (HGLOBAL hm = GlobalAlloc(GMEM_MOVEABLE, (savedClip.size() + 1) * sizeof(wchar_t))) {
+                            std::memcpy(GlobalLock(hm), savedClip.c_str(), (savedClip.size() + 1) * sizeof(wchar_t));
+                            GlobalUnlock(hm);
+                            SetClipboardData(CF_UNICODETEXT, hm);
+                        }
+                    CloseClipboard();
+                }
+                click(252, 418);                           // Systemcheck oeffnen
+                Sleep(300);
+                shoot(base + "set_encheck.bmp");
+                click(20, 600);                            // wegklicken
+                Sleep(200);
+
                 click(400, 612);                            // Klick neben das Panel schliesst das Popup
                 Sleep(300);
                 shoot(base + "set_enclosed.bmp");          // zu: Hauptseite wieder sichtbar und bedienbar
                 shotPages("set_en");                       // alle 5 Seiten, English
                 click(gearX, gearY);                       // Popup wieder auf
-                click(186, 152);                            // zurueck auf Automatisch (die Einstellungen landen nur in %TEMP%)
+                click(186, 192);                           // zurueck auf Automatisch (die Einstellungen landen nur in %TEMP%)
                 Sleep(500);
                 std::printf("UI-Pruefung: %d Fehler\n", fails);
                 micStop = true;
@@ -540,7 +596,8 @@ int main(int argc, char** argv)
                 click(gearX, gearY);
                 Sleep(500);
                 shoot(base + "p0.bmp");                  // Popup mit Profil-Karte
-                click(207, 374);                         // "Speichern als ..."
+                click(428, 87);                          // Reiter Profile
+                click(207, 206);                         // "Speichern als ..."
                 type(L"Abend");
                 Sleep(400);
                 shoot(base + "p1.bmp");                  // Eingabe offen
@@ -559,13 +616,13 @@ int main(int argc, char** argv)
                 click(48, 354);
                 Sleep(500);
                 shoot(base + "s0.bmp");                  // leeres Raster
-                drop({d + L"\\tone.wav", d + L"\\tone.mp3"}, 215, 188);
+                drop({d + L"\\tone.wav", d + L"\\tone.mp3"}, 215, 220);
                 Sleep(1800);
                 shoot(base + "s1.bmp");                  // zwei Knoepfe belegt (Knopf 1 mit Tastenkuerzel)
-                click(215, 188);                         // Knopf 1 spielen
+                click(215, 220);                         // Knopf 1 spielen
                 Sleep(150);
                 shoot(base + "s2.bmp");                  // Aufleuchten
-                rclick(406, 188);                        // Rechtsklick auf Knopf 2: Editor
+                rclick(406, 220);                        // Rechtsklick auf Knopf 2: Editor
                 Sleep(200);
                 shoot(base + "s3.bmp");
                 type(L"Hupe laut");
@@ -584,7 +641,7 @@ int main(int argc, char** argv)
                     check(vol > 120 && vol <= 200, "Knopf 2: Lautstaerke ~150 %");
                 }
                 // Knopf 1 auf Feld 5 (zweite Zeile) ziehen = verschieben
-                drag(215, 188, 215, 316);
+                drag(215, 220, 215, 348);
                 Sleep(1800);
                 check(str("Sounds", "Slot5").find("tone") != std::string::npos && str("Sounds", "Slot1").empty(), "Knopf 1 per Ziehen auf Feld 5 verschoben");
                 // Raster: Zeilen +1, Spalten +1, Tastenkuerzel-Anzeige aus
@@ -610,6 +667,26 @@ int main(int argc, char** argv)
                     PostMessageW(sb, WM_CLOSE, 0, 0);
                     Sleep(800);
                     check(!IsWindow(sb) || !IsWindowVisible(sb), "Soundboard-Fenster schliesst");
+                }
+                // Suchfeld: tippen dunkelt nicht passende Knoepfe ab
+                click(48, 354);
+                Sleep(300);
+                click(200, 138);
+                type(L"hupe");
+                Sleep(300);
+                shoot(base + "s8.bmp");
+                for (int i = 0; i < 4; ++i) SendMessageW(w, WM_CHAR, 8, 0);
+                click(20, 600);
+                // Mini-Fenster
+                click(732, 36);
+                Sleep(1000);
+                HWND mini = FindWindowW(L"VoiceTuneMini", nullptr);
+                check(mini != nullptr && IsWindowVisible(mini), "Mini-Fenster offen");
+                if (mini) {
+                    shootHwnd(mini, base + "m0.bmp");
+                    PostMessageW(mini, WM_CLOSE, 0, 0);
+                    Sleep(800);
+                    check(!IsWindow(mini) || !IsWindowVisible(mini), "Mini-Fenster schliesst");
                 }
                 // Voicechanger-Reiter
                 click(48, 430);

@@ -178,6 +178,13 @@ Settings LoadSettings(const std::wstring& iniPath, const wchar_t* section)
             pr.mono           = num(L"Mono", 0) != 0;
             pr.optimizeForOpus = num(L"Optimize", 1) != 0;
             pr.opusPreview    = num(L"Opus", 1) != 0;
+            pr.soundRows      = std::min(kSoundMaxRows, std::max(1, num(L"SndRows", 2)));
+            pr.soundCols      = std::min(kSoundMaxCols, std::max(1, num(L"SndCols", 4)));
+            pr.soundVolPct    = Clamp200(num(L"SndVol", 100));
+            pr.voicePreset    = str(L"Voice");
+            pr.autoServerUid  = str(L"AutoUid");
+            pr.autoServerName = str(L"AutoName");
+            pr.autoChannel    = str(L"AutoChannel");
             s.profiles.Save(str(L"Name"), pr);
         }
     }
@@ -243,6 +250,55 @@ Settings LoadSettings(const std::wstring& iniPath, const wchar_t* section)
     s.nowPlayingMeta    = GetPrivateProfileIntW(section, L"NowPlayingMeta", s.nowPlayingMeta, p) != 0;
     s.language          = std::min(2, std::max(0, static_cast<int>(GetPrivateProfileIntW(section, L"Language", s.language, p))));
     s.advancedOpen      = GetPrivateProfileIntW(section, L"AdvancedOpen", s.advancedOpen, p) != 0;
+
+    {   // Fenster, Update, Ducking, Angleichen, Automatik
+        auto geti = [&](const wchar_t* sec, const wchar_t* key, int def) { return static_cast<int>(GetPrivateProfileIntW(sec, key, def, p)); };
+        auto pos  = [&](const wchar_t* key) { // gespeichert als Text, damit kNoPos (INT_MIN) und negative Werte (zweiter Monitor links) stimmen
+            wchar_t buf[32] = {};
+            GetPrivateProfileStringW(L"Window", key, L"", buf, 32, p);
+            if (!buf[0]) return static_cast<int>(Settings::kNoPos);
+            return static_cast<int>(std::min<long>(30000, std::max<long>(-30000, wcstol(buf, nullptr, 10))));
+        };
+        s.winX = pos(L"MainX");  s.winY = pos(L"MainY");
+        s.sbX  = pos(L"SoundX"); s.sbY  = pos(L"SoundY");
+        s.sbW  = std::max(0, std::min(20000, geti(L"Window", L"SoundW", 0)));
+        s.sbH  = std::max(0, std::min(20000, geti(L"Window", L"SoundH", 0)));
+        s.miniX = pos(L"MiniX"); s.miniY = pos(L"MiniY");
+
+        s.updateCheck     = geti(L"Update", L"Check", 1) != 0;
+        s.updateCheckedAt = static_cast<long long>(GetPrivateProfileIntW(L"Update", L"CheckedAt", 0, p));
+        {
+            wchar_t buf[64] = {};
+            GetPrivateProfileStringW(L"Update", L"Latest", L"", buf, 64, p);
+            s.updateLatest = buf;
+        }
+        s.firstRunDone = geti(L"Update", L"FirstRunDone", 0) != 0;
+
+        s.duckSoundOn = geti(L"Ducking", L"SoundOn", 1) != 0;
+        s.duckSoundDb = std::min(30, std::max(0, geti(L"Ducking", L"SoundDb", 12)));
+        s.duckMicOn   = geti(L"Ducking", L"MicOn", 0) != 0;
+        s.duckMicDb   = std::min(30, std::max(0, geti(L"Ducking", L"MicDb", 10)));
+        s.duckMicThresholdDb = std::min(-20, std::max(-70, geti(L"Ducking", L"MicThresholdDb", -45)));
+
+        s.normSounds   = geti(L"Loudness", L"Sounds", 0) != 0;
+        s.normTracks   = geti(L"Loudness", L"Tracks", 0) != 0;
+        s.normTargetDb = std::min(-6, std::max(-40, geti(L"Loudness", L"TargetDb", -18)));
+        {   // [TrackGain]: Gain<n>=<dB*10>|<pfad>
+            const int n = std::min(2000, std::max(0, geti(L"TrackGain", L"Count", 0)));
+            std::vector<wchar_t> buf(2048);
+            for (int i = 1; i <= n; ++i) {
+                wchar_t key[32];
+                swprintf(key, 32, L"Gain%d", i);
+                GetPrivateProfileStringW(L"TrackGain", key, L"", buf.data(), static_cast<DWORD>(buf.size()), p);
+                const std::wstring v = buf.data();
+                const size_t       bar = v.find(L'|');
+                if (bar == std::wstring::npos || bar + 1 >= v.size()) continue;
+                s.trackGain.emplace_back(v.substr(bar + 1), std::min(0.0f, std::max(-120.0f, static_cast<float>(wcstol(v.substr(0, bar).c_str(), nullptr, 10)) / 10.0f)));
+            }
+        }
+        s.autoProfile = geti(L"Automation", L"AutoProfile", 1) != 0;
+        s.trayIcon    = geti(L"Automation", L"TrayIcon", 0) != 0;
+    }
     return s;
 }
 
@@ -307,6 +363,15 @@ void SaveSettings(const std::wstring& iniPath, const Settings& s)
         put(L"Mono", pr.mono ? L"1" : L"0");
         put(L"Optimize", pr.optimizeForOpus ? L"1" : L"0");
         put(L"Opus", pr.opusPreview ? L"1" : L"0");
+        put(L"SndRows", std::to_wstring(pr.soundRows));
+        put(L"SndCols", std::to_wstring(pr.soundCols));
+        put(L"SndVol", std::to_wstring(pr.soundVolPct));
+        if (!pr.voicePreset.empty()) put(L"Voice", pr.voicePreset);
+        if (!pr.autoServerUid.empty()) {
+            put(L"AutoUid", pr.autoServerUid);
+            put(L"AutoName", pr.autoServerName);
+            if (!pr.autoChannel.empty()) put(L"AutoChannel", pr.autoChannel);
+        }
     }
 
     WritePrivateProfileStringW(kSection, L"SoundVolume", std::to_wstring(s.soundVolPct).c_str(), p);
@@ -348,4 +413,40 @@ void SaveSettings(const std::wstring& iniPath, const Settings& s)
     WritePrivateProfileStringW(kSection, L"NowPlayingMeta", s.nowPlayingMeta ? L"1" : L"0", p);
     WritePrivateProfileStringW(kSection, L"Language", std::to_wstring(s.language).c_str(), p);
     WritePrivateProfileStringW(kSection, L"AdvancedOpen", s.advancedOpen ? L"1" : L"0", p);
+
+    {
+        auto puti = [&](const wchar_t* sec, const wchar_t* key, long long v) { WritePrivateProfileStringW(sec, key, std::to_wstring(v).c_str(), p); };
+        auto pos  = [&](const wchar_t* key, int v) { WritePrivateProfileStringW(L"Window", key, v == Settings::kNoPos ? nullptr : std::to_wstring(v).c_str(), p); };
+        pos(L"MainX", s.winX);   pos(L"MainY", s.winY);
+        pos(L"SoundX", s.sbX);   pos(L"SoundY", s.sbY);
+        puti(L"Window", L"SoundW", s.sbW);
+        puti(L"Window", L"SoundH", s.sbH);
+        pos(L"MiniX", s.miniX);  pos(L"MiniY", s.miniY);
+
+        puti(L"Update", L"Check", s.updateCheck ? 1 : 0);
+        puti(L"Update", L"CheckedAt", s.updateCheckedAt);
+        WritePrivateProfileStringW(L"Update", L"Latest", s.updateLatest.c_str(), p);
+        puti(L"Update", L"FirstRunDone", s.firstRunDone ? 1 : 0);
+
+        puti(L"Ducking", L"SoundOn", s.duckSoundOn ? 1 : 0);
+        puti(L"Ducking", L"SoundDb", s.duckSoundDb);
+        puti(L"Ducking", L"MicOn", s.duckMicOn ? 1 : 0);
+        puti(L"Ducking", L"MicDb", s.duckMicDb);
+        puti(L"Ducking", L"MicThresholdDb", s.duckMicThresholdDb);
+
+        puti(L"Loudness", L"Sounds", s.normSounds ? 1 : 0);
+        puti(L"Loudness", L"Tracks", s.normTracks ? 1 : 0);
+        puti(L"Loudness", L"TargetDb", s.normTargetDb);
+        WritePrivateProfileStringW(L"TrackGain", nullptr, nullptr, p);
+        if (!s.trackGain.empty()) {
+            puti(L"TrackGain", L"Count", static_cast<long long>(s.trackGain.size()));
+            for (size_t i = 0; i < s.trackGain.size(); ++i) {
+                wchar_t key[32];
+                swprintf(key, 32, L"Gain%zu", i + 1);
+                WritePrivateProfileStringW(L"TrackGain", key, (std::to_wstring(static_cast<long>(std::lround(s.trackGain[i].second * 10.0f))) + L"|" + s.trackGain[i].first).c_str(), p);
+            }
+        }
+        puti(L"Automation", L"AutoProfile", s.autoProfile ? 1 : 0);
+        puti(L"Automation", L"TrayIcon", s.trayIcon ? 1 : 0);
+    }
 }

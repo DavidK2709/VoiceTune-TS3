@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cwchar>
 
+#include "board_file.h"
 #include "engine.h"
 #include "i18n.h"
 #include "playlist.h"
@@ -120,7 +121,7 @@ View::Geo View::MakeGeo(const RectF& area, const Host& h) const
     Geo         g;
     const float s = h.s;
     g.area        = area;
-    g.bar         = RectF(area.X, area.Y, area.Width, 44 * s);
+    g.bar         = RectF(area.X, area.Y, area.Width, 76 * s);
     g.foot        = RectF(area.X, area.Y + area.Height - 44 * s, area.Width, 44 * s);
 
     // Werkzeugleiste oben: Zeilen/Spalten-Zaehler wie bei RP Soundboard, Tastenkuerzel-Schalter, rechts Abkoppeln bzw. Immer-oben
@@ -140,6 +141,12 @@ View::Geo View::MakeGeo(const RectF& area, const Host& h) const
     g.aux            = RectF(area.X + area.Width - 4 * s - auxW, y, auxW, bh);
     g.showKeys       = RectF(x, y + 1 * s, 44 * s, 26 * s);
     g.showKeysLabel  = RectF(x + 52 * s, y, std::max(0.0f, g.aux.X - (x + 52 * s) - 8 * s), bh);
+
+    // Zweite Zeile: Suchfeld, rechts Export/Import des Boards
+    const float y2 = g.bar.Y + 44 * s;
+    g.exportBtn    = RectF(area.X + area.Width - 4 * s - 112 * s, y2, 112 * s, bh);
+    g.importBtn    = RectF(g.exportBtn.X - 8 * s - 112 * s, y2, 112 * s, bh);
+    g.searchField  = RectF(area.X + 4 * s, y2, std::min(320.0f * s, std::max(80.0f * s, g.importBtn.X - 12 * s - (area.X + 4 * s))), bh);
 
     // Fusszeile: Gesamtlautstaerke und "Alle stoppen"
     const float fy = g.foot.Y + 8 * s;
@@ -277,6 +284,7 @@ int View::HitEditor(const Geo& g, int x, int y) const
     if (In(g.volSlider, x, y)) return 15;
     if (In(g.keyBtn, x, y) && editor_.slot < kSoundHotkeys) return 16;
     if (In(g.delBtn, x, y) && !Engine::Get().GetSound(editor_.slot).path.empty()) return 17;
+    if (In(g.testBtn, x, y) && !Engine::Get().GetSound(editor_.slot).path.empty()) return 21;
     if (In(g.cancelBtn, x, y)) return 18;
     if (In(g.okBtn, x, y)) return 19;
     return 20;
@@ -372,6 +380,7 @@ void View::Paint(Graphics& g, const RectF& area, const Host& h)
                 const BYTE     a     = lifted ? 90 : 255;
                 FillRoundGrad(g, cell, rad, C(Shade(base, 255, 0.12f), a), C(Shade(base, 0, 0.22f), a));
                 if (hover) FillRound(g, cell, rad, C(0xFFFFFF, 26));
+                if (!Matches(info.name)) FillRound(g, cell, rad, C(0x14161B, 175)); // gesucht wird etwas anderes: abdunkeln
                 if (flash_[slot] > 0.01f) FillRound(g, cell, rad, C(0xFFFFFF, static_cast<BYTE>(150 * flash_[slot])));
                 const Color textCol = light ? C(0x101318) : C(0xFFFFFF);
                 const bool  failed  = info.state == Soundboard::State::Failed;
@@ -440,6 +449,26 @@ void View::Paint(Graphics& g, const RectF& area, const Host& h)
     }
     DrawButton(g, geo.stop, Tr(L"Alle stoppen"), *h.small, false, hoverBar_ == 8, s);
 
+    // ---- Zweite Werkzeugzeile: Suchfeld, Export/Import --------------------------------------------------------------------------------------------
+    {
+        const RectF& f = geo.searchField;
+        FillRound(g, f, 8 * s, C(col::bg));
+        StrokeRound(g, f, 8 * s, searchFocus_ ? C(col::accent, 230) : C(col::border, hoverBar_ == 10 ? 255 : 160), searchFocus_ ? 1.5f : 1.0f);
+        DrawIcon(g, Icon::Search, RectF(f.X + 8 * s, f.Y + 6 * s, 16 * s, 16 * s), C(col::sub), s);
+        const RectF tr(f.X + 30 * s, f.Y, f.Width - 40 * s, f.Height);
+        if (search_.empty()) {
+            Text(g, Tr(L"Suchen …"), *h.small, tr, C(col::sub, 170));
+            if (searchFocus_ && (h.tick / 14) % 2 == 0) {
+                Pen caret(C(col::text), std::max(1.2f, s));
+                g.DrawLine(&caret, tr.X, f.Y + 6 * s, tr.X, f.Y + f.Height - 6 * s);
+            }
+        } else {
+            Text(g, search_ + (searchFocus_ && (h.tick / 14) % 2 == 0 ? L"|" : L""), *h.small, tr, C(col::text));
+        }
+        DrawButton(g, geo.importBtn, Tr(L"Import …"), *h.small, false, hoverBar_ == 11, s);
+        DrawButton(g, geo.exportBtn, Tr(L"Export …"), *h.small, false, hoverBar_ == 12, s);
+    }
+
     if (!toast_.empty()) {
         const float w = std::min(geo.area.Width - 20 * s, 360.0f * s);
         const RectF tr(geo.area.X + (geo.area.Width - w) / 2, geo.foot.Y - 34 * s, w, 28 * s);
@@ -462,6 +491,7 @@ void View::Paint(Graphics& g, const RectF& area, const Host& h)
         geo.volSlider = RectF(px, Y(254), inW - 64 * s, 22 * s);
         geo.keyBtn    = RectF(px, Y(310), inW, 30 * s);
         geo.delBtn    = RectF(px, Y(358), 110 * s, 30 * s);
+        geo.testBtn   = RectF(px + 118 * s, Y(358), 110 * s, 30 * s);
         geo.okBtn     = RectF(px + inW - 120 * s, Y(358), 120 * s, 30 * s);
         geo.cancelBtn = RectF(px + inW - 120 * s - 8 * s - 110 * s, Y(358), 110 * s, 30 * s);
 
@@ -534,6 +564,7 @@ void View::Paint(Graphics& g, const RectF& area, const Host& h)
         if (exists) {
             FillRound(g, geo.delBtn, geo.delBtn.Height / 2, hoverEd_ == 17 ? C(col::bad, 230) : C(col::bad, 70));
             Text(g, Tr(L"Entfernen"), *h.small, geo.delBtn, C(0xFFFFFF), StringAlignmentCenter);
+            DrawButton(g, geo.testBtn, Tr(L"Vorhören"), *h.small, false, hoverEd_ == 21, s, col::accent, true);
         }
         DrawButton(g, geo.cancelBtn, Tr(L"Abbrechen"), *h.small, false, hoverEd_ == 18, s);
         DrawButton(g, geo.okBtn, Tr(L"Speichern"), *h.small, true, hoverEd_ == 19, s, col::accent, !editor_.path.empty());
@@ -544,6 +575,87 @@ void View::Paint(Graphics& g, const RectF& area, const Host& h)
 // ---------------------------------------------------------------------------------------------------------------------------------------------
 // Eingaben
 // ---------------------------------------------------------------------------------------------------------------------------------------------
+
+bool View::Matches(const std::wstring& name) const
+{
+    if (search_.empty()) return true;
+    std::wstring a = name, b = search_;
+    for (auto& c : a) c = static_cast<wchar_t>(towlower(c));
+    for (auto& c : b) c = static_cast<wchar_t>(towlower(c));
+    return a.find(b) != std::wstring::npos;
+}
+
+void View::ExportBoard(const Host& h)
+{
+    wchar_t        file[MAX_PATH] = L"Soundboard.vtboard";
+    std::wstring   filter = std::wstring(Tr(L"VoiceTune-Board")) + L'\0' + L"*.vtboard" + L'\0' + L'\0';
+    const std::wstring title = Tr(L"Soundboard exportieren");
+    OPENFILENAMEW  ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = h.hwnd;
+    ofn.lpstrFile   = file;
+    ofn.nMaxFile    = MAX_PATH;
+    ofn.lpstrFilter = filter.c_str();
+    ofn.lpstrTitle  = title.c_str();
+    ofn.lpstrDefExt = L"vtboard";
+    ofn.Flags       = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetSaveFileNameW(&ofn)) return;
+    const Settings st = Engine::Get().GetSettings();
+    board::Data    d;
+    d.rows  = st.soundRows;
+    d.cols  = st.soundCols;
+    d.slots = st.sounds;
+    const std::wstring path = file;
+    const size_t       slash = path.find_last_of(L"\\/");
+    const std::string  text  = board::FormatBoard(d, slash == std::wstring::npos ? L"" : path.substr(0, slash));
+    HANDLE             f     = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    DWORD              wrote = 0;
+    const bool         ok    = f != INVALID_HANDLE_VALUE && WriteFile(f, text.data(), static_cast<DWORD>(text.size()), &wrote, nullptr) && wrote == text.size();
+    if (f != INVALID_HANDLE_VALUE) CloseHandle(f);
+    SetToast(ok ? Tr(L"Soundboard exportiert") : Tr(L"Export fehlgeschlagen"));
+}
+
+void View::ImportBoard(const Host& h)
+{
+    wchar_t        file[MAX_PATH] = L"";
+    std::wstring   filter = std::wstring(Tr(L"VoiceTune-Board")) + L'\0' + L"*.vtboard" + L'\0' + std::wstring(Tr(L"Alle Dateien")) + L'\0' + L"*.*" + L'\0' + L'\0';
+    const std::wstring title = Tr(L"Soundboard importieren");
+    OPENFILENAMEW  ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = h.hwnd;
+    ofn.lpstrFile   = file;
+    ofn.nMaxFile    = MAX_PATH;
+    ofn.lpstrFilter = filter.c_str();
+    ofn.lpstrTitle  = title.c_str();
+    ofn.Flags       = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetOpenFileNameW(&ofn)) return;
+    const std::wstring path = file;
+    HANDLE             f    = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    std::string        text;
+    if (f != INVALID_HANDLE_VALUE) {
+        const DWORD size = GetFileSize(f, nullptr);
+        if (size != INVALID_FILE_SIZE && size < 4u * 1024 * 1024) {
+            text.resize(size);
+            DWORD got = 0;
+            if (!ReadFile(f, &text[0], size, &got, nullptr)) text.clear();
+            text.resize(got);
+        }
+        CloseHandle(f);
+    }
+    const size_t       slash = path.find_last_of(L"\\/");
+    board::Data        d;
+    if (!board::ParseBoard(text, slash == std::wstring::npos ? L"" : path.substr(0, slash), &d)) {
+        SetToast(Tr(L"Keine gültige Soundboard-Datei"));
+        return;
+    }
+    int used = 0;
+    for (const auto& s : d.slots) used += s.path.empty() ? 0 : 1;
+    const std::wstring question = Fmt1(Tr(L"Das aktuelle Board durch %s Knöpfe aus der Datei ersetzen?"), std::to_wstring(used));
+    if (MessageBoxW(h.hwnd, question.c_str(), L"VoiceTune", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+    Engine::Get().SoundImport(d.slots, d.rows, d.cols);
+    scroll_ = 0;
+    SetToast(Fmt1(Tr(L"%s Knöpfe importiert"), std::to_wstring(used)));
+}
 
 bool View::MouseDown(int x, int y, const Host& h)
 {
@@ -568,6 +680,10 @@ bool View::MouseDown(int x, int y, const Host& h)
             editor_.open = false;
             break;
         case 18: editor_.open = false; break;
+        case 21: // Vorhoeren: nur auf deiner eigenen Ausgabe, nie ins Mikrofon (gespeicherte Fassung des Knopfes)
+            if (en.GetSound(editor_.slot).path != editor_.path) SetToast(Tr(L"Erst speichern, dann vorhören"));
+            else en.SoundPreview(editor_.slot);
+            break;
         case 19: SaveEditor(); break;
         case -1: break; // Klick neben das Fenster: nichts
         default:
@@ -595,6 +711,10 @@ bool View::MouseDown(int x, int y, const Host& h)
         return true;
     }
     if (In(g.stop, x, y)) { en.SoundStop(); return true; }
+    if (In(g.exportBtn, x, y)) { ExportBoard(h); return true; }
+    if (In(g.importBtn, x, y)) { ImportBoard(h); return true; }
+    searchFocus_ = In(g.searchField, x, y); // Klick ins Suchfeld gibt ihm den Fokus, jeder andere Klick nimmt ihn weg
+    if (searchFocus_) return true;
     if (g.selfHear.Width > 0 && (In(g.selfHear, x, y) || In(g.selfHearLabel, x, y))) { en.SetSoundMonitor(!st.soundMonitor); return true; }
 
     const int slot = CellAt(g, x, y);
@@ -638,6 +758,9 @@ void View::MouseMove(int x, int y, const Host& h)
     else if (In(g.aux, x, y)) hoverBar_ = 6;
     else if (In(g.volume, x, y)) hoverBar_ = 7;
     else if (In(g.stop, x, y)) hoverBar_ = 8;
+    else if (In(g.exportBtn, x, y)) hoverBar_ = 12;
+    else if (In(g.importBtn, x, y)) hoverBar_ = 11;
+    else if (In(g.searchField, x, y)) hoverBar_ = 10;
     else if (g.selfHear.Width > 0 && (In(g.selfHear, x, y) || In(g.selfHearLabel, x, y))) hoverBar_ = 9;
     else hoverSlot_ = CellAt(g, x, y);
 }
@@ -655,8 +778,12 @@ void View::MouseUp(int x, int y, const Host& h)
             en.SoundReload(d.from);
             SetToast(Tr(L"Die Datei wird erneut geladen …"));
         } else {
-            en.SoundPlay(d.from);
-            Flash(d.from);
+            if (GetKeyState(VK_CONTROL) < 0) {
+                en.SoundPreview(d.from); // Strg+Klick: nur vorhoeren (eigene Ausgabe, nicht ins Mikrofon)
+            } else {
+                en.SoundPlay(d.from);
+                Flash(d.from);
+            }
         }
         return;
     }
@@ -683,6 +810,13 @@ bool View::Wheel(int x, int y, int delta, const Host& h)
 
 bool View::Char(wchar_t ch, const Host& h)
 {
+    if (!editor_.open && searchFocus_) { // Suchfeld
+        if (ch == L'\r' || ch == 27) searchFocus_ = false;
+        else if (ch == L'\b') { if (!search_.empty()) search_.pop_back(); }
+        else if (ch == 22) search_ = (search_ + ClipboardLine(h.hwnd)).substr(0, 40);
+        else if (ch >= 32 && ch != 127 && search_.size() < 40) search_ += ch;
+        return true;
+    }
     if (!editor_.open) return false;
     if (ch == L'\r') { SaveEditor(); return true; }
     if (ch == 27) { editor_.open = false; return true; }
@@ -708,6 +842,13 @@ bool View::Char(wchar_t ch, const Host& h)
 
 bool View::Key(WPARAM vk, const Host&)
 {
+    if (!editor_.open && searchFocus_) {
+        if (vk == VK_ESCAPE) { // erst Eingabe leeren, dann Fokus abgeben
+            if (search_.empty()) searchFocus_ = false;
+            else search_.clear();
+        }
+        return true;
+    }
     if (!editor_.open) return false;
     if (vk == VK_ESCAPE) { editor_.open = false; return true; }
     if (vk == VK_DELETE && editor_.nameSel) {

@@ -10,6 +10,7 @@
 //   playpause | next | prev | stop Datei-Player
 //   preset/<Name>                  Equalizer-Preset (mitgeliefert oder eigen)
 //   profile/<Name> | profile_next  Profil anwenden bzw. naechstes Profil reihum
+//   profilenum/<1-10>              n-tes Profil der Liste anwenden (Hotkeys profile1..profile10)
 //   source/<exe>                   Audio-Quelle waehlen (z.B. spotify.exe)
 //   sound/<1-400> | soundstop        Soundboard-Clip abspielen / alle stoppen (ohne "Musik einspielen" zu veraendern)
 //   soundmonitor                   Selbst hoeren fuer Soundboard-Clips (auf dem Standard-Ausgabegeraet) ein/aus umschalten
@@ -17,6 +18,8 @@
 //   playlist/<Name>                gespeicherte Wiedergabeliste laden (ersetzt die aktuelle, startet nicht)
 #include <string>
 #include <vector>
+
+constexpr int kProfileHotkeys = 10; // Hotkeys "Profil 1 anwenden" ... "Profil 10 anwenden"
 
 // name + optionales Argument. true = Befehl bekannt und Argument gueltig (und ausgefuehrt).
 bool RunCommand(const std::string& name, const std::string& arg = "");
