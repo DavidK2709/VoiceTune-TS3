@@ -168,10 +168,14 @@ int main(int argc, char** argv)
     en.PlayerAdd({wav});
     en.PlayerPlay(0);
     RunFor(1000);
-    en.SetEnabled(false); // Hauptschalter aus
+    en.SetEnabled(false); // Hauptschalter aus: gilt nur fuer die App, die Datei laeuft weiter
     const size_t so = RunFor(1500);
-    CHECK(en.GetPlayer().paused, "Hauptschalter aus pausiert die Datei");
-    CHECK(Peak(so, 0.9, 0.5) < 60, "Hauptschalter aus: still (Spitze %d)", Peak(so, 0.9, 0.5));
+    CHECK(!en.GetPlayer().paused && en.GetPlayer().active, "Hauptschalter aus laesst die Datei weiterlaufen");
+    CHECK(Peak(so, 0.9, 0.5) > 300, "Hauptschalter aus: Datei bleibt hoerbar (Spitze %d)", Peak(so, 0.9, 0.5));
+    CHECK(!en.GetSettings().enabled, "Datei-Player schaltet \"Musik einspielen\" nicht ein");
+    en.PlayerStop();
+    en.PlayerPlay(0);
+    CHECK(!en.GetSettings().enabled, "Play schaltet \"Musik einspielen\" nicht ein");
     en.PlayerStop();
 
     // ---- 4. Mikrofon stumm: gilt auch ohne Musik, die Musik laeuft weiter -----------------------------------------------------------------
@@ -391,13 +395,62 @@ int main(int argc, char** argv)
         en.PlayerTogglePause();
         RunFor(3500);
         CHECK(got.size() == 1, "Pause/Weiter meldet nicht erneut (%zu)", got.size());
-        en.SetEnabled(false);
+        en.SetEnabled(false); // die Datei laeuft unabhaengig vom Hauptschalter weiter: Titel bleibt gemeldet
         RunFor(1500);
-        CHECK(got.size() == 2 && got[1].empty(), "Musik aus: leere Meldung (%zu)", got.size());
-        en.SetNowPlayingChat(false);
+        CHECK(got.size() == 1, "Hauptschalter aus, Datei spielt: keine leere Meldung (%zu)", got.size());
         en.PlayerStop();
+        RunFor(1500);
+        CHECK(got.size() == 2 && got[1].empty(), "Datei gestoppt und Musik aus: leere Meldung (%zu)", got.size());
+        en.SetNowPlayingChat(false);
         en.SetNowPlayingCallback(nullptr);
         en.SetEnabled(true);
+    }
+
+    // ---- 9. Ohne Mikrofon-Callback (TS3 stumm, keine Sprechberechtigung, nicht verbunden): Dateien und Clips laufen nach der Uhr weiter --------
+    //         (Ersatztakt) statt sich zu stauen und spaeter alle auf einmal zu starten
+    {
+        en.SetEnabled(false);
+        en.PlayerClear();
+        en.PlayerAdd({wav});
+        en.PlayerPlay(0);
+        RunFor(1000);
+        const double p0 = en.GetPlayer().position;
+        Sleep(2000); // TS3 ruft den Mikrofon-Callback nicht auf
+        const double p1 = en.GetPlayer().position;
+        CHECK(p1 - p0 > 1.5 && p1 - p0 < 2.5, "Datei laeuft ohne Mikrofon-Callback weiter (%.2f -> %.2f s)", p0, p1);
+        en.PlayerStop();
+
+        en.SoundSetSlot(0, wav);
+        for (int i = 0; i < 400 && en.GetSound(0).state != Soundboard::State::Ready; ++i) Sleep(20);
+        CHECK(en.GetSound(0).position < 0, "Clip spielt noch nicht");
+        en.SoundPlay(0);
+        Sleep(1000);
+        const double q = en.GetSound(0).position;
+        CHECK(q > 0.7 && q < 1.3, "Clip laeuft ohne Mikrofon-Callback (%.2f s)", q);
+        const size_t k = RunFor(600); // TS3 ruft wieder: der Clip laeuft an seiner Stelle weiter, startet nicht von vorn
+        CHECK(en.GetSound(0).position > 1.4, "Clip laeuft an seiner Stelle weiter (%.2f s)", en.GetSound(0).position);
+        CHECK(Peak(k, 0.2, 0.3) > 300 && std::fabs(Freq(k, 0.2) - 440) < 12, "danach wieder im Mikrofon (Spitze %d, %.0f Hz)", Peak(k, 0.2, 0.3), Freq(k, 0.2));
+        en.SoundStop();
+        RunFor(300);
+        CHECK(en.GetSound(0).position < 0, "nach Stopp keine Position");
+        en.SoundSetSlot(0, L"");
+        en.SetEnabled(true);
+    }
+
+    // ---- 10. Wiedergabelisten speichern, laden, umbenennen, loeschen; die aktuelle Liste wird gemerkt ----------------------------------------
+    {
+        en.PlayerClear();
+        CHECK(en.PlayerAdd({wav, mp3, wav}) == 2, "Duplikat wird nicht doppelt aufgenommen");
+        CHECK(en.GetSettings().lastPlaylist.size() == 2, "aktuelle Liste gemerkt (%zu)", en.GetSettings().lastPlaylist.size());
+        CHECK(en.PlaylistSave(L"Zwei") == PresetResult::Ok && en.GetSettings().playlistName == L"Zwei", "Liste speichern");
+        en.PlayerClear();
+        CHECK(en.GetSettings().lastPlaylist.empty(), "geleerte Liste gemerkt");
+        CHECK(en.PlaylistLoad(L"zwei") && en.GetPlayer().items.size() == 2 && !en.GetPlayer().active, "Liste laden (startet nicht)");
+        CHECK(!en.PlaylistLoad(L"gibt es nicht"), "unbekannte Liste");
+        CHECK(en.PlaylistRename(L"Zwei", L"Paar") == PresetResult::Ok && en.GetSettings().playlistName == L"Paar" && en.PlaylistNames().size() == 1, "Umbenennen");
+        CHECK(en.PlaylistDelete(L"Paar") && en.GetSettings().playlistName.empty() && en.PlaylistNames().empty(), "Loeschen");
+        CHECK(en.GetPlayer().items.size() == 2, "Loeschen laesst die aktuelle Liste stehen");
+        en.PlayerClear();
     }
 
     timeEndPeriod(1);

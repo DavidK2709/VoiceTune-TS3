@@ -42,6 +42,7 @@ public:
 
     State  GetState(int slot) const;
     double Seconds(int slot) const; // Laenge des Clips (bleibt auch nach dem Verwerfen bekannt), 0 wenn unbekannt
+    double Position(int slot) const; // Sekunden seit dem Start, solange der Clip spielt; -1 = spielt nicht (fuer die Fortschrittsanzeige)
 
     // Speicherbudget (Standard kBudgetBytes); nur fuer Tests aendern.
     void   SetBudget(size_t bytes) { budget_ = bytes; }
@@ -67,6 +68,7 @@ private:
         std::atomic<uint64_t>                       lastUse{0};        // fuer die Verdraengung (groesser = juenger)
         std::atomic<bool>                           playWhenReady{false};
         std::atomic<size_t>                         size{0};           // Bytes des geladenen Clips
+        std::atomic<int64_t>                        playPos{-1};       // Frames der laufenden Stimme dieses Slots, -1 = keine (vom Audio-Thread gesetzt)
         std::wstring                                path;              // unter mutex_
     };
     struct Voice {

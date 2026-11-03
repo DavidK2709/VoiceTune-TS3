@@ -160,6 +160,12 @@ void Soundboard::Evict(int keep)
 
 Soundboard::State Soundboard::GetState(int slot) const { return (slot < 0 || slot >= kSlots) ? State::Empty : slots_[slot].state.load(); }
 double            Soundboard::Seconds(int slot) const { return (slot < 0 || slot >= kSlots) ? 0.0 : slots_[slot].seconds.load(); }
+double            Soundboard::Position(int slot) const
+{
+    if (slot < 0 || slot >= kSlots) return -1.0;
+    const int64_t p = slots_[slot].playPos.load(std::memory_order_relaxed);
+    return p < 0 ? -1.0 : static_cast<double>(p) / 48000.0;
+}
 
 void Soundboard::Play(int slot)
 {
@@ -198,7 +204,10 @@ void Soundboard::StopAll()
 bool Soundboard::Mix(int16_t* io, int frames, float gain)
 {
     if (stopAll_.exchange(false)) {
-        for (auto& v : voices_) v = Voice();
+        for (auto& v : voices_) {
+            if (v.slot >= 0) slots_[v.slot].playPos.store(-1, std::memory_order_relaxed);
+            v = Voice();
+        }
         active_ = 0;
     }
     // Neue Ausloeser in Stimmen umsetzen (die Schleife nur, wenn ueberhaupt etwas ansteht)
@@ -219,11 +228,13 @@ bool Soundboard::Mix(int16_t* io, int frames, float gain)
                 target = &voices_[0];
                 for (auto& v : voices_)
                     if (v.pos > target->pos) target = &v;
+                if (target->slot >= 0 && target->slot != i) slots_[target->slot].playPos.store(-1, std::memory_order_relaxed);
             }
             target->clip = std::move(clip);
             target->pos  = 0;
             target->slot = i;
             target->mul  = static_cast<float>(slots_[i].volume.load()) / 100.0f;
+            slots_[i].playPos.store(0, std::memory_order_relaxed);
         }
     }
 
@@ -241,8 +252,13 @@ bool Soundboard::Mix(int16_t* io, int frames, float gain)
         }
         mixed |= n > 0;
         v.pos += n;
-        if (v.pos >= total) v = Voice();
-        else ++live;
+        if (v.pos >= total) {
+            slots_[v.slot].playPos.store(-1, std::memory_order_relaxed);
+            v = Voice();
+        } else {
+            slots_[v.slot].playPos.store(static_cast<int64_t>(v.pos), std::memory_order_relaxed);
+            ++live;
+        }
     }
     active_ = live;
     return mixed;

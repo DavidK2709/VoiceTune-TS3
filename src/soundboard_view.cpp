@@ -375,8 +375,17 @@ void View::Paint(Graphics& g, const RectF& area, const Host& h)
                 if (flash_[slot] > 0.01f) FillRound(g, cell, rad, C(0xFFFFFF, static_cast<BYTE>(150 * flash_[slot])));
                 const Color textCol = light ? C(0x101318) : C(0xFFFFFF);
                 const bool  failed  = info.state == Soundboard::State::Failed;
+                const bool  playing = info.position >= 0 && info.seconds > 0;
                 if (failed) StrokeRound(g, cell, rad, C(col::bad), 2.0f * s);
+                else if (playing) StrokeRound(g, cell, rad, C(light ? 0x101318 : 0xFFFFFF, 230), 2.0f * s); // laeuft gerade: kraeftiger Rahmen
                 else StrokeRound(g, cell, rad, C(Shade(base, 255, 0.35f), 90));
+                if (playing) { // Fortschritt: schmaler Balken am oberen Rand (unten stehen Tastenkuerzel und Dauer)
+                    const float frac = static_cast<float>(std::clamp(info.position / info.seconds, 0.0, 1.0));
+                    const float bh = std::max(3.0f, 3.5f * s), inset = rad * 0.8f;
+                    const RectF track(cell.X + inset, cell.Y + 3 * s, cell.Width - 2 * inset, bh);
+                    FillRound(g, track, bh / 2, C(light ? 0x101318 : 0xFFFFFF, 60));
+                    if (frac > 0.0f) FillRound(g, RectF(track.X, track.Y, std::max(bh, track.Width * frac), bh), bh / 2, C(light ? 0x101318 : 0xFFFFFF, 220));
+                }
                 const float padX = 5 * s;
                 const bool  hasKey = st.soundShowKeys && slot < kSoundHotkeys && slot < static_cast<int>(keyText_.size()) && !keyText_[slot].empty();
                 const bool  roomy  = geo.cellH >= 50 * s;
@@ -387,9 +396,10 @@ void View::Paint(Graphics& g, const RectF& area, const Host& h)
                     const RectF kr(cell.X + padX, cell.Y + cell.Height - 15 * s, cell.Width - 2 * padX, 13 * s);
                     Text(g, keyText_[slot], *h.tiny, kr, light ? C(0x101318, 190) : C(0xFFFFFF, 200), StringAlignmentNear);
                 }
-                if (roomy && info.seconds > 0) { // Dauer unten rechts
-                    wchar_t buf[24];
-                    swprintf(buf, 24, L"%.1f s", info.seconds);
+                if (roomy && info.seconds > 0) { // Dauer unten rechts, waehrend des Abspielens "Position / Dauer"
+                    wchar_t buf[40];
+                    if (playing) swprintf(buf, 40, L"%.1f / %.1f s", std::min(info.position, info.seconds), info.seconds);
+                    else swprintf(buf, 40, L"%.1f s", info.seconds);
                     Text(g, buf, *h.tiny, RectF(cell.X + padX, cell.Y + cell.Height - 15 * s, cell.Width - 2 * padX, 13 * s), light ? C(0x101318, 150) : C(0xFFFFFF, 150),
                          StringAlignmentFar);
                 }

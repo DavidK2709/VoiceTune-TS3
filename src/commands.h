@@ -12,7 +12,9 @@
 //   profile/<Name> | profile_next  Profil anwenden bzw. naechstes Profil reihum
 //   source/<exe>                   Audio-Quelle waehlen (z.B. spotify.exe)
 //   sound/<1-400> | soundstop        Soundboard-Clip abspielen / alle stoppen (ohne "Musik einspielen" zu veraendern)
-//   soundmonitor                   Selbst hoeren (Clips + Datei-Player auf dem Standard-Ausgabegeraet) ein/aus umschalten
+//   soundmonitor                   Selbst hoeren fuer Soundboard-Clips (auf dem Standard-Ausgabegeraet) ein/aus umschalten
+//   filemonitor                    Selbst hoeren fuer den Datei-Player ein/aus umschalten
+//   playlist/<Name>                gespeicherte Wiedergabeliste laden (ersetzt die aktuelle, startet nicht)
 #include <string>
 #include <vector>
 

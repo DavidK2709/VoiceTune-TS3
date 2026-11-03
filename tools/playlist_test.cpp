@@ -2,6 +2,7 @@
 #include <cstdio>
 
 #include "playlist.h"
+#include "playlists.h"
 
 static int g_fail = 0;
 #define CHECK(c, ...) do { if (!(c)) { std::printf("FAIL %s:%d  %s  ", __FILE__, __LINE__, #c); std::printf(__VA_ARGS__); std::printf("\n"); ++g_fail; } } while (0)
@@ -42,6 +43,28 @@ int main()
     // Obergrenze
     for (size_t i = 0; i < Playlist::kMax + 10; ++i) p.Add(L"x" + std::to_wstring(i) + L".mp3");
     CHECK(p.items.size() == Playlist::kMax, "Maximum %zu", p.items.size());
+
+    // Benannte Wiedergabelisten (PlaylistBook) und das INI-Format (Pfade mit '|')
+    {
+        using playlists::PlaylistBook;
+        PlaylistBook b;
+        CHECK(b.Save(L"  Party  ", {L"C:\\a.mp3", L"C:\\b.mp3"}) == PresetResult::Ok && b.items.size() == 1 && b.items[0].name == L"Party", "Speichern (Name getrimmt)");
+        CHECK(b.Save(L"party", {L"C:\\c.mp3"}) == PresetResult::Updated && b.items.size() == 1 && b.items[0].paths.size() == 1 && b.items[0].name == L"party", "gleicher Name = aktualisieren");
+        CHECK(b.Save(L"   ", {}) == PresetResult::Empty, "leerer Name");
+        CHECK(b.Save(L"Ruhig", {}) == PresetResult::Ok && b.Find(L"RUHIG") != nullptr, "leere Liste, Suche ohne Gross/klein");
+        CHECK(b.Rename(L"ruhig", L"Party") == PresetResult::Exists && b.Rename(L"nix", L"x") == PresetResult::NotFound, "Umbenennen: Konflikt / unbekannt");
+        CHECK(b.Rename(L"ruhig", L"Abend") == PresetResult::Ok && b.Find(L"Abend") && !b.Find(L"Ruhig"), "Umbenennen");
+        CHECK(b.Delete(L"ABEND") && !b.Delete(L"Abend") && b.items.size() == 1, "Loeschen");
+        CHECK(b.SuggestName(L"Liste") == L"Liste 1", "Namensvorschlag");
+        for (size_t i = 0; i < playlists::kMaxLists + 5; ++i) b.Save(L"L" + std::to_wstring(i), {});
+        CHECK(b.items.size() == playlists::kMaxLists && b.Save(L"zuviel", {}) == PresetResult::Full, "hoechstens %zu Listen", playlists::kMaxLists);
+        std::vector<std::wstring> big(playlists::kMaxPaths + 3, L"x.mp3");
+        CHECK(b.Save(L"L0", big) == PresetResult::Updated && b.Find(L"L0")->paths.size() == playlists::kMaxPaths, "hoechstens %zu Pfade", playlists::kMaxPaths);
+
+        const std::vector<std::wstring> paths = {L"C:\\Musik\\Ä b.mp3", L"D:\\x\\y.flac"};
+        CHECK(playlists::Join(paths) == L"C:\\Musik\\Ä b.mp3|D:\\x\\y.flac" && playlists::Split(playlists::Join(paths)) == paths, "Join/Split");
+        CHECK(playlists::Split(L"").empty() && playlists::Split(L"|a.mp3||").size() == 1, "Split: leere Teile ignorieren");
+    }
 
     std::printf(g_fail ? "%d FEHLER\n" : "playlist_test: alle Tests ok\n", g_fail);
     return g_fail ? 1 : 0;
