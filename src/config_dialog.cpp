@@ -47,7 +47,8 @@ constexpr int      kGridCols   = 6;
 enum class Hit {
     None, TabMix, TabEq, TabFiles,
     // Seite "Dateien"
-    FilePrev, FilePlay, FileStop, FileNext, FileRepeat, FileClear, FileOpen, FileSeek, FileRow, FileRemove,
+    FilePrev, FilePlay, FileStop, FileNext, FileRepeat, FileClear, FileOpen, FileSeek, FileRow, FileRemove, FileSelfHear,
+    PlField, PlItem, PlPopup, PlSave, PlRename, PlDelete, // gespeicherte Wiedergabelisten
     // Seite "Quelle & Mix"
     MainToggle, MenuItem, MenuBody, MicMute, Tile, Grid, SliderMusic, SliderMic, MonitorToggle, SliderDelay, AlwaysToggle,
     // Seite "Equalizer"
@@ -92,6 +93,7 @@ struct Layout {
     RectF header, tab[kTabs];
     // Seite 2 (Dateien)
     RectF filesNow, fileSeek, btnPrev, btnPlay, btnStop, btnNext, btnRepeat, btnClear, btnOpen, fileCard, fileArea;
+    RectF fileSelfHear, fileSelfHearRow, plField, plSave, plRename, plDelete; // Selbst hoeren; Leiste der gespeicherten Wiedergabelisten
     // Seite 0
     RectF micMute, mainToggleRow, mainToggle, gridCard, gridArea, mixCard, meterL, meterR, sliderMusic, sliderMic, monitorCard, monitorRow, monitorToggle, sliderDelay;
     // Seite 1
@@ -140,6 +142,12 @@ Layout MakeLayout(float s)
     l.btnOpen   = R(614, 216, 170, 34);
     l.fileCard  = R(16, 274, 788, 354);
     l.fileArea  = R(24, 274 + 40, 772, 354 - 48);
+    l.fileSelfHear    = R(16 + 788 - kPad - 48, 112 + 10, 48, 26);  // oben rechts in der Karte "Jetzt"
+    l.fileSelfHearRow = R(16 + 788 - kPad - 48 - 120, 112 + 6, 168, 34); // Schalter samt Beschriftung (Klickbereich)
+    l.plField  = R(304, 274 + 7, 168, 28); // Kopf der Karte "Wiedergabeliste": gespeicherte Listen
+    l.plSave   = R(480, 274 + 7, 100, 28);
+    l.plRename = R(588, 274 + 7, 96, 28);
+    l.plDelete = R(692, 274 + 7, 104, 28);
 
     // Seite 0 "Quelle & Mix": Karte "Audio-Quelle" mit Hauptschalter in der Titelleiste, darunter zwei gleich hohe Spalten (232)
     l.gridCard      = R(16, 112, 788, 272);
@@ -291,10 +299,12 @@ struct Ctx {
     // Preset-Auswahl (Dropdown), Namenseingabe, Meldungen
     bool         presetOpen   = false;
     float        presetScroll = 0;
+    bool         plOpen       = false; // Dropdown der gespeicherten Wiedergabelisten (Seite Dateien)
+    float        plScroll     = 0;
     struct {
         bool         active = false, rename = false, selectAll = false;
         std::wstring text, original;
-        int          kind = 0; // 0 = EQ-Filter, 1 = Profil
+        int          kind = 0; // 0 = EQ-Filter, 1 = Profil, 2 = Wiedergabeliste
     } edit;
     int          deleteArm  = 0; // verbleibende Ticks, in denen "Wirklich loeschen?" gilt
     std::wstring toast;
@@ -533,6 +543,19 @@ RectF PopupRowRect(const Layout& l, const std::vector<PRow>& rows, size_t index,
     return RectF(pr.X + 4 * l.s, y, pr.Width - 8 * l.s, RowHeight(rows[index].type, l.s));
 }
 
+// Dropdown der gespeicherten Wiedergabelisten (Seite Dateien): eine Zeile je Liste (mindestens eine fuer den Hinweis "keine"), hoechstens 280 px hoch
+constexpr float kPlRowH = 30;
+float PlPopupContent(const Layout& l, size_t count) { return (8 + std::max<size_t>(count, 1) * kPlRowH) * l.s; }
+RectF PlPopupRect(const Layout& l, size_t count)
+{
+    return RectF(l.plField.X, l.plField.Y + l.plField.Height + 4 * l.s, 300 * l.s, std::min(PlPopupContent(l, count), 280 * l.s));
+}
+RectF PlRowRect(const Layout& l, size_t count, size_t index, float scroll)
+{
+    const RectF pr = PlPopupRect(l, count);
+    return RectF(pr.X + 4 * l.s, pr.Y + 4 * l.s + index * kPlRowH * l.s - scroll, pr.Width - 8 * l.s, kPlRowH * l.s);
+}
+
 // Welches Preset ist gerade gewaehlt? Ein gewaehlter Name zaehlt auch dann, wenn die Kurve danach veraendert wurde ("geaendert").
 struct CurPreset {
     std::wstring label = Tr(L"Eigene Kurve");
@@ -635,6 +658,20 @@ HitInfo HitTest(Ctx* c, int x, int y)
             return {Hit::Grid, -1};
         }
     } else if (c->page == 2) {
+        if (c->plOpen) { // Dropdown der Wiedergabelisten liegt ueber allem
+            const size_t n  = Engine::Get().GetSettings().playlists.items.size();
+            const RectF  pr = PlPopupRect(l, n);
+            if (In(pr, x, y)) {
+                for (size_t i = 0; i < n; ++i)
+                    if (In(PlRowRect(l, n, i, c->plScroll), x, y) && y >= pr.Y && y < pr.Y + pr.Height) return {Hit::PlItem, static_cast<int>(i)};
+                return {Hit::PlPopup, -1};
+            }
+        }
+        if (In(l.fileSelfHearRow, x, y)) return {Hit::FileSelfHear, -1};
+        if (In(l.plField, x, y)) return {Hit::PlField, -1};
+        if (In(l.plSave, x, y)) return {Hit::PlSave, -1};
+        if (In(l.plRename, x, y)) return {Hit::PlRename, -1};
+        if (!(c->edit.active && c->edit.kind == 2) && In(l.plDelete, x, y)) return {Hit::PlDelete, -1};
         if (In(l.btnPrev, x, y)) return {Hit::FilePrev, -1};
         if (In(l.btnPlay, x, y)) return {Hit::FilePlay, -1};
         if (In(l.btnStop, x, y)) return {Hit::FileStop, -1};
@@ -714,6 +751,8 @@ std::wstring TrStatus(const std::wstring& st)
     if (i18n::Current() == i18n::Lang::German) return st;
     const std::wstring whole = Tr(st);
     if (whole != st) return whole;
+    for (const wchar_t* fileHead : {L"Aktiv: Datei + App – ", L"Aktiv: Datei – "}) // Datei-Player (Titel bleibt unuebersetzt)
+        if (StartsWith(st, fileHead)) return std::wstring(Tr(fileHead)) + st.substr(std::wcslen(fileHead));
     if (StartsWith(st, L"Aktiv: ")) return std::wstring(Tr(L"Aktiv: ")) + st.substr(7);
     if (StartsWith(st, L"Warte auf ")) {
         const std::wstring tail = L" (App starten und Ton abspielen)";
@@ -1175,7 +1214,12 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
             const float  frac  = c->seekDrag ? c->seekFrac : (dur > 0 ? std::clamp(static_cast<float>(ps.position / dur), 0.0f, 1.0f) : 0.0f);
 
             card(l.filesNow);
-            Text(g, haveCur ? ps.items[ps.current].title : std::wstring(Tr(L"Keine Datei ausgewählt")), *c->fTitle, pad(l.filesNow, kPad, 8, 756, 30), C(col::text));
+            Text(g, haveCur ? ps.items[ps.current].title : std::wstring(Tr(L"Keine Datei ausgewählt")), *c->fTitle, pad(l.filesNow, kPad, 8, 570, 30), C(col::text)); // rechts daneben: "Selbst hoeren"
+            // Selbst hoeren (Datei-Player auf dem eigenen Ausgabegeraet), oben rechts
+            if (hv.hit == Hit::FileSelfHear) FillRound(g, l.fileSelfHearRow, 8 * s, C(0xFFFFFF, 8));
+            Text(g, Tr(L"Selbst hören"), *c->fSmall, RectF(l.fileSelfHearRow.X + 8 * s, l.fileSelfHear.Y, l.fileSelfHear.X - l.fileSelfHearRow.X - 14 * s, l.fileSelfHear.Height),
+                 hv.hit == Hit::FileSelfHear ? C(col::text) : C(col::sub), StringAlignmentFar);
+            DrawToggle(g, l.fileSelfHear, st.fileMonitor ? 1.0f : 0.0f);
             {
                 std::wstring sub;
                 uint32_t     color = col::sub;
@@ -1231,7 +1275,31 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
             // Wiedergabeliste bzw. Ablageflaeche
             card(l.fileCard);
             cardTitle(l.fileCard, Icon::Note, Tr(L"Wiedergabeliste"), 10);
-            Text(g, count ? std::to_wstring(count) + (count == 1 ? Tr(L" Titel") : Tr(L" Titel "))  /* zweiter Schluessel mit Leerzeichen: Mehrzahl */ : std::wstring(Tr(L"leer")), *c->fSmall, pad(l.fileCard, 178, 8, 200, 28), C(col::sub));
+            Text(g, count ? std::to_wstring(count) + (count == 1 ? Tr(L" Titel") : Tr(L" Titel "))  /* zweiter Schluessel mit Leerzeichen: Mehrzahl */ : std::wstring(Tr(L"leer")), *c->fSmall, pad(l.fileCard, 178, 8, 106, 28), C(col::sub));
+            // Gespeicherte Wiedergabelisten: Auswahl (Dropdown), Speichern als / Umbenennen / Loeschen, oder Namenseingabe
+            {
+                const bool           editing = c->edit.active && c->edit.kind == 2;
+                const SavedPlaylist* curL    = st.playlists.Find(st.playlistName);
+                const RectF&         f       = l.plField;
+                if (editing) {
+                    DrawEditField(g, c, f, s);
+                } else {
+                    FillRound(g, f, 8 * s, (hv.hit == Hit::PlField || c->plOpen) ? C(col::cardHover) : C(col::track, 140));
+                    Text(g, curL ? curL->name : std::wstring(Tr(L"Gespeicherte Listen")), *c->fSmall, RectF(f.X + 10 * s, f.Y, f.Width - 34 * s, f.Height), curL ? C(col::text) : C(col::sub));
+                    PointF     tri[3] = {PointF(f.X + f.Width - 22 * s, f.Y + 11 * s), PointF(f.X + f.Width - 10 * s, f.Y + 11 * s), PointF(f.X + f.Width - 16 * s, f.Y + 18 * s)};
+                    SolidBrush arrow(C(col::sub));
+                    g.FillPolygon(&arrow, tri, 3);
+                }
+                if (!editing) {
+                    DrawButton(g, l.plSave, Tr(L"Speichern als …"), *c->fSmall, false, hv.hit == Hit::PlSave, s);
+                    DrawButton(g, l.plRename, Tr(L"Umbenennen"), *c->fSmall, false, hv.hit == Hit::PlRename, s, col::accent, curL != nullptr);
+                    const bool armed = c->deleteArm > 0;
+                    DrawButton(g, l.plDelete, armed ? Tr(L"Wirklich löschen?") : Tr(L"Löschen"), *c->fSmall, armed, hv.hit == Hit::PlDelete, s, col::bad, curL != nullptr);
+                } else {
+                    DrawButton(g, l.plSave, c->edit.rename ? Tr(L"Umbenennen") : Tr(L"Speichern"), *c->fSmall, true, hv.hit == Hit::PlSave, s, col::ok);
+                    DrawButton(g, l.plRename, Tr(L"Abbrechen"), *c->fSmall, false, hv.hit == Hit::PlRename, s);
+                }
+            }
             g.SetClip(l.fileArea);
             if (count == 0) {
                 RectF zone(l.fileArea.X + 24 * s, l.fileArea.Y + 24 * s, l.fileArea.Width - 48 * s, l.fileArea.Height - 48 * s);
@@ -1288,6 +1356,35 @@ void Paint(Ctx* c, HDC dc, const RECT& rc)
                 FillRound(g, t, 8 * s, C(col::card, a));
                 StrokeRound(g, t, 8 * s, C(color, a));
                 Text(g, c->toast, *c->fSmall, t, C(col::text, a), StringAlignmentCenter);
+            }
+            if (c->plOpen) { // Dropdown der gespeicherten Wiedergabelisten (ueber der Liste)
+                const auto&  lists = st.playlists.items;
+                const size_t n     = lists.size();
+                const RectF  pr    = PlPopupRect(l, n);
+                FillRound(g, RectF(pr.X + 2 * s, pr.Y + 4 * s, pr.Width, pr.Height), 10 * s, C(0x000000, 90));
+                FillRound(g, pr, 10 * s, C(col::card));
+                StrokeRound(g, pr, 10 * s, C(col::border));
+                g.SetClip(RectF(pr.X, pr.Y + 2 * s, pr.Width, pr.Height - 4 * s));
+                if (n == 0) {
+                    Text(g, Tr(L"Noch keine gespeicherten Listen"), *c->fSmall, PlRowRect(l, n, 0, 0), C(col::sub), StringAlignmentCenter);
+                }
+                for (size_t i = 0; i < n; ++i) {
+                    const RectF rr = PlRowRect(l, n, i, c->plScroll);
+                    if (rr.Y + rr.Height < pr.Y || rr.Y > pr.Y + pr.Height) continue;
+                    const bool sel = presets::EqualNoCase(lists[i].name, st.playlistName);
+                    const bool hov = hv.hit == Hit::PlItem && hv.idx == static_cast<int>(i);
+                    if (sel) FillRound(g, rr, 7 * s, C(col::accent, 60));
+                    else if (hov) FillRound(g, rr, 7 * s, C(col::cardHover));
+                    Text(g, lists[i].name, *c->fBody, RectF(rr.X + 12 * s, rr.Y, rr.Width - 110 * s, rr.Height), C(col::text));
+                    Text(g, std::to_wstring(lists[i].paths.size()) + (lists[i].paths.size() == 1 ? Tr(L" Titel") : Tr(L" Titel ")), *c->fTiny,
+                         RectF(rr.X + rr.Width - 96 * s, rr.Y, 84 * s, rr.Height), C(col::sub), StringAlignmentFar);
+                }
+                g.ResetClip();
+                const float content = PlPopupContent(l, n), view = pr.Height;
+                if (content > view) { // Scrollbalken
+                    const float th = std::max(20 * s, view * view / content), ty = pr.Y + (view - th) * (c->plScroll / (content - view));
+                    FillRound(g, RectF(pr.X + pr.Width - 5 * s, ty, 3 * s, th), 1.5f * s, C(col::sub, 120));
+                }
             }
         } else if (c->page == 3) {
             // =========================================================== Seite "Sounds" ===========================================================
@@ -1682,6 +1779,7 @@ void StartEdit(Ctx* c, bool rename, const std::wstring& initial, int kind = 0)
     c->edit.original  = initial;
     c->edit.kind      = kind;
     c->presetOpen     = false;
+    c->plOpen         = false;
     c->deleteArm      = 0;
 }
 
@@ -1690,6 +1788,25 @@ void CancelEdit(Ctx* c) { c->edit = {}; }
 void CommitEdit(Ctx* c)
 {
     Engine&            en   = Engine::Get();
+    if (c->edit.kind == 2) { // Wiedergabeliste speichern bzw. umbenennen
+        const std::wstring name     = presets::Sanitize(c->edit.text);
+        const std::wstring was      = c->edit.original;
+        const bool         isRename = c->edit.rename;
+        const bool         existed  = !isRename && en.GetSettings().playlists.Find(name) != nullptr;
+        const PresetResult r        = isRename ? en.PlaylistRename(was, name) : en.PlaylistSave(name);
+        switch (r) {
+        case PresetResult::Ok:
+        case PresetResult::Updated:
+            ShowToast(c, isRename ? Fmt1(Tr(L"Umbenannt in „%s“"), name) : Fmt1(existed ? Tr(L"Liste „%s“ aktualisiert") : Tr(L"Liste „%s“ gespeichert"), name), false);
+            CancelEdit(c);
+            break;
+        case PresetResult::Empty: ShowToast(c, Tr(L"Bitte einen Namen eingeben"), true); break;
+        case PresetResult::Exists: ShowToast(c, Fmt1(Tr(L"Eine Liste „%s“ gibt es schon"), name), true); break;
+        case PresetResult::Full: ShowToast(c, Tr(L"Maximal 50 Listen"), true); break;
+        default: ShowToast(c, Tr(L"Das hat nicht geklappt"), true); break;
+        }
+        return;
+    }
     if (c->edit.kind == 1) { // Profil speichern bzw. umbenennen
         const std::wstring name     = presets::Sanitize(c->edit.text);
         const std::wstring was      = c->edit.original;
@@ -1971,7 +2088,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         const HitInfo h  = HitTest(c, x, y);
         Engine&       en = Engine::Get();
         const Settings st = en.GetSettings();
-        if (c->deleteArm > 0 && h.hit != Hit::PresetDelete && h.hit != Hit::ProfDelete) c->deleteArm = 0; // "Wirklich loeschen?" verfaellt bei jedem anderen Klick
+        if (c->deleteArm > 0 && h.hit != Hit::PresetDelete && h.hit != Hit::ProfDelete && h.hit != Hit::PlDelete) c->deleteArm = 0; // "Wirklich loeschen?" verfaellt bei jedem anderen Klick
         if (c->page == 3 && !c->settingsOpen && h.hit == Hit::None && c->sbView.MouseDown(x, y, SbHost(c))) { // Soundboard-Raster, Werkzeugleisten, Editor
             if (c->sbView.Dragging()) SetCapture(hwnd);
             return 0;
@@ -2000,7 +2117,49 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             }
             if (!IsTab(h.hit)) return 0;
         }
+        if (c->plOpen) { // Dropdown der Wiedergabelisten: Liste laden oder schliessen; der Klick geht nicht durch
+            c->plOpen = false;
+            if (h.hit == Hit::PlItem && static_cast<size_t>(h.idx) < st.playlists.items.size()) {
+                const std::wstring name = st.playlists.items[h.idx].name;
+                if (en.PlaylistLoad(name)) {
+                    c->fileScroll = 0;
+                    ShowToast(c, Fmt1(Tr(L"Liste „%s“ geladen"), name), false);
+                }
+                return 0;
+            }
+            if (!IsTab(h.hit)) return 0;
+        }
         switch (h.hit) {
+        case Hit::FileSelfHear: en.SetFileMonitor(!st.fileMonitor); break;
+        case Hit::PlField:
+            if (!(c->edit.active && c->edit.kind == 2)) {
+                c->plOpen   = true;
+                c->plScroll = 0;
+            }
+            break;
+        case Hit::PlPopup:
+        case Hit::PlItem: break;
+        case Hit::PlSave:
+            if (c->edit.active && c->edit.kind == 2) CommitEdit(c);
+            else StartEdit(c, false, st.playlists.Find(st.playlistName) ? st.playlistName : st.playlists.SuggestName(Tr(L"Liste")), 2); // eine gewaehlte Liste wird so aktualisiert
+            break;
+        case Hit::PlRename:
+            if (c->edit.active && c->edit.kind == 2) CancelEdit(c);
+            else if (st.playlists.Find(st.playlistName)) StartEdit(c, true, st.playlistName, 2);
+            break;
+        case Hit::PlDelete: {
+            const SavedPlaylist* pl = st.playlists.Find(st.playlistName);
+            if (!pl) break;
+            if (c->deleteArm > 0) { // zweiter Klick: wirklich loeschen (die aktuelle Wiedergabeliste bleibt, wie sie ist)
+                const std::wstring name = pl->name;
+                en.PlaylistDelete(name);
+                ShowToast(c, Fmt1(Tr(L"Liste „%s“ gelöscht"), name), false);
+                c->deleteArm = 0;
+            } else {
+                c->deleteArm = 90;
+            }
+            break;
+        }
         case Hit::MicMute: en.SetMicMuted(!en.IsMicMuted()); break;
         case Hit::FilePrev: en.PlayerPrev(); break;
         case Hit::FilePlay: en.PlayerTogglePause(); break;
@@ -2034,6 +2193,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             }
             c->page       = newPage;
             c->presetOpen = false;
+            c->plOpen     = false;
             c->deleteArm  = 0;
             break;
         }
@@ -2041,6 +2201,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             c->settingsOpen = !c->settingsOpen;
             c->menu.open    = false;
             c->presetOpen   = false;
+            c->plOpen       = false;
             CancelEdit(c);
             break;
         case Hit::SettingsBackdrop: c->settingsOpen = false; break; // Klick neben das Panel schliesst es
@@ -2241,6 +2402,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             c->presetScroll = std::clamp(c->presetScroll - GET_WHEEL_DELTA_WPARAM(wp) / 120.0f * 28 * c->lay.s, 0.0f, maxScroll);
             return 0;
         }
+        if (c && c->page == 2 && c->plOpen) { // Dropdown der gespeicherten Listen scrollen
+            const size_t n         = Engine::Get().GetSettings().playlists.items.size();
+            const float  maxScroll = std::max(0.0f, PlPopupContent(c->lay, n) - PlPopupRect(c->lay, n).Height);
+            c->plScroll            = std::clamp(c->plScroll - GET_WHEEL_DELTA_WPARAM(wp) / 120.0f * kPlRowH * c->lay.s, 0.0f, maxScroll);
+            return 0;
+        }
         if (c && c->page == 2) { // Wiedergabeliste scrollen
             const int   count     = static_cast<int>(Engine::Get().GetPlayer().items.size());
             const float maxScroll = std::max(0.0f, count * 40 * c->lay.s - c->lay.fileArea.Height);
@@ -2267,6 +2434,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             else if (c->settingsOpen) c->settingsOpen = false;
             else if (c->edit.active) CancelEdit(c);
             else if (c->presetOpen) c->presetOpen = false;
+            else if (c->plOpen) c->plOpen = false;
             else DestroyWindow(hwnd);
         } else if (c && c->page == 3 && c->sbView.EditorOpen()) {
             c->sbView.Key(wp, SbHost(c));

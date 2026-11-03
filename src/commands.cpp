@@ -113,6 +113,10 @@ bool RunCommand(const std::string& name, const std::string& arg)
     }
     else if (name == "soundstop") e.SoundStop();
     else if (name == "soundmonitor") e.SetSoundMonitor(!s.soundMonitor);
+    else if (name == "filemonitor") e.SetFileMonitor(!s.fileMonitor);
+    else if (name == "playlist") {
+        if (!e.PlaylistLoad(Utf8ToWide(arg))) return false;
+    }
     else return false;
     return true;
 }

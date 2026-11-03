@@ -15,7 +15,7 @@ GET /state
 Antwort:
 
 ```json
-{"enabled":true,"micMuted":false,"musicVol":100,"micVol":100,"playing":false,"monitor":false,"profile":"Abend","preset":"Flach","source":"Spotify"}
+{"enabled":true,"micMuted":false,"musicVol":100,"micVol":100,"playing":false,"monitor":false,"soundMonitor":true,"fileMonitor":true,"playlist":"","profile":"Abend","preset":"Flach","source":"Spotify"}
 ```
 
 | Feld | Bedeutung |
@@ -26,9 +26,12 @@ Antwort:
 | `micVol` | Mikrofon-Lautstärke in Prozent (0–200) |
 | `playing` | Der Datei-Player spielt gerade (nicht pausiert) |
 | `monitor` | Mithören ist an |
+| `soundMonitor` | „Selbst hören“ für Soundboard-Clips ist an |
+| `fileMonitor` | „Selbst hören“ für den Datei-Player ist an |
+| `playlist` | Name der zuletzt gespeicherten/geladenen Wiedergabeliste (leer = keine) |
 | `profile` | Name des gewählten Profils (leer = keines) |
 | `preset` | Name des gewählten Equalizer-Presets (leer = eigene Kurve) |
-| `source` | Name der aktuellen Quelle (laufender Dateititel oder gewählte App) |
+| `source` | Name der gewählten App (für „Musik einspielen“) |
 
 ## Befehle
 
@@ -52,9 +55,12 @@ Jeder Befehl antwortet mit dem neuen Zustand (gleiches JSON wie `/state`).
 | `profile/<Name>` | Profil anwenden (Quelle, Lautstärken, Mithören, Equalizer, Qualität, Opus) |
 | `profile_next` | Nächstes Profil reihum |
 | `source/<exe>` | Audio-Quelle wählen, z.B. `source/spotify.exe` |
-| `sound/<1-400>` | Soundboard-Clip abspielen (leere Plätze tun nichts; schaltet bei Bedarf „Musik einspielen“ ein) |
+| `sound/<1-400>` | Soundboard-Clip sofort abspielen (leere Plätze tun nichts; „Musik einspielen“ bleibt, wie es ist) |
+| `soundmonitor` | „Selbst hören“ für Soundboard-Clips ein/aus |
+| `filemonitor` | „Selbst hören“ für den Datei-Player ein/aus |
+| `playlist/<Name>` | Gespeicherte Wiedergabeliste laden (ersetzt die aktuelle Liste, startet nicht von selbst) |
 | `soundstop` | Alle Soundboard-Clips stoppen |
-| `playpause` | Datei-Player: Pause/Weiter bzw. ersten Titel starten |
+| `playpause` | Datei-Player: Pause/Weiter bzw. ersten Titel starten (unabhängig von „Musik einspielen“; wird zur App dazugemischt) |
 | `next` / `prev` | Datei-Player: nächster / vorheriger Titel |
 | `stop` | Datei-Player stoppen |
 
@@ -68,6 +74,7 @@ Damit sich Knöpfe passend zu den vorhandenen Namen belegen lassen:
 |---|---|
 | `GET /presets` | `{"presets":["Flach","Bass+", …],"current":"Flach"}` (mitgelieferte zuerst, dann eigene) |
 | `GET /profiles` | `{"profiles":["Abend","Zocken"],"current":"Abend"}` |
+| `GET /playlists` | `{"playlists":["Party","Ruhig"],"current":"Party"}` |
 | `GET /sounds` | `{"rows":2,"cols":4,"sounds":[{"slot":1,"name":"Hupe","ready":true}, …]}` – nur belegte Knöpfe, `slot` = Knopfnummer (zeilenweise im Raster) |
 
 ## Beispiele

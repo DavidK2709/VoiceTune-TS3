@@ -143,6 +143,30 @@ int main(int argc, char** argv)
         sb.Play(0); // danach geht es wieder
         CHECK(Peak(Render(sb, 960)) == 5000, "nach StopAll wieder spielbar");
     }
+    // 5b. Position fuer die Fortschrittsanzeige: -1 ohne Wiedergabe, laeuft mit, nach Ende/StopAll wieder -1
+    {
+        Soundboard sb;
+        sb.LoadMemory(0, Constant(0.5, 3000));
+        CHECK(sb.Position(0) < 0 && sb.Position(1) < 0 && sb.Position(-1) < 0, "vor Play keine Position");
+        sb.Play(0);
+        Render(sb, 4800); // 100 ms
+        CHECK(std::fabs(sb.Position(0) - 0.1) < 0.001, "Position nach 100 ms: %.3f", sb.Position(0));
+        Render(sb, 9600);
+        CHECK(std::fabs(sb.Position(0) - 0.3) < 0.001, "Position nach 300 ms: %.3f", sb.Position(0));
+        Render(sb, 14400); // Ende (0,5 s)
+        CHECK(sb.Position(0) < 0 && !sb.Active(), "nach dem Ende keine Position");
+        sb.Play(0);
+        Render(sb, 960);
+        CHECK(sb.Position(0) > 0, "laeuft wieder");
+        sb.StopAll();
+        Render(sb, 960);
+        CHECK(sb.Position(0) < 0, "nach StopAll keine Position");
+        sb.Play(0);
+        Render(sb, 9600);
+        sb.Play(0); // Neustart desselben Clips: Position beginnt von vorn
+        Render(sb, 960);
+        CHECK(std::fabs(sb.Position(0) - 0.02) < 0.001, "Neustart: %.3f", sb.Position(0));
+    }
     // 6. Mehr Clips als Stimmen: der am weitesten fortgeschrittene wird ersetzt, nichts bricht
     {
         Soundboard sb;

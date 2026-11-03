@@ -131,8 +131,9 @@ public:
     void HideApp(const std::wstring& exeLower);
     void ShowAllApps();
 
-    // ---- Datei-Player: Audio-Dateien (mp3, wav, flac, m4a ...) per Drag & Drop abspielen, statt der App-Aufnahme. Die Dateien laufen durch dieselbe Kette
-    // (Lautstaerke, EQ, Mono, Mithoeren, Musikmodus). Alle Befehle sind aus jedem Thread aufrufbar.
+    // ---- Datei-Player: Audio-Dateien (mp3, wav, flac, m4a ...) per Drag & Drop abspielen, zusaetzlich zur App-Aufnahme (beides wird gemischt). Die Dateien
+    // laufen durch dieselbe Kette (Lautstaerke, EQ, Mono, Mithoeren, Musikmodus) und brauchen "Musik einspielen" nicht (der Schalter gilt nur fuer die App).
+    // Alle Befehle sind aus jedem Thread aufrufbar.
     PlayerSnapshot GetPlayer();
     int  PlayerAdd(const std::vector<std::wstring>& paths); // Rueckgabe: Anzahl uebernommener Dateien
     void PlayerPlay(int index);                              // -1 = fortsetzen bzw. ersten Titel starten
@@ -144,7 +145,13 @@ public:
     void PlayerRemove(int index);
     void PlayerClear();
     void PlayerSetRepeat(RepeatMode mode);
-    // Name der aktuellen Quelle: laufender Dateititel oder die gewaehlte App ("Spotify")
+    // Benannte Wiedergabelisten (werden sofort gespeichert). Load ersetzt die aktuelle Liste und stoppt die Wiedergabe.
+    PresetResult PlaylistSave(const std::wstring& name);
+    PresetResult PlaylistRename(const std::wstring& from, const std::wstring& to);
+    bool         PlaylistDelete(const std::wstring& name);
+    bool         PlaylistLoad(const std::wstring& name);
+    std::vector<std::wstring> PlaylistNames();
+    // Name der gewaehlten App ("Spotify") fuer das Banner von "Musik einspielen"
     std::wstring SourceLabel();
 
     // ---- Soundboard (bis zu 400 Knoepfe mit kurzen Clips, die ueber die Musik gespielt werden). Slots sind 0..399 (Knopf = Slot + 1), das Raster
@@ -155,6 +162,7 @@ public:
         double            seconds = 0;
         uint32_t          color   = 0;   // 0xRRGGBB, 0 = Standardfarbe
         int               volPct  = 100; // Lautstaerke dieses Knopfes
+        double            position = -1; // Sekunden seit Start, solange der Clip spielt; -1 = spielt nicht
     };
     void                   SoundSetSlot(int slot, const std::wstring& path); // Datei zuweisen (leer = Knopf leeren), Name = Dateiname ohne Endung; wird gespeichert
     void                   SoundConfigure(int slot, const std::wstring& path, const std::wstring& name, uint32_t color, int volPct); // Editor: alles auf einmal
@@ -167,9 +175,10 @@ public:
     void                   SetSoundGrid(int rows, int cols);
     void                   SetSoundShowKeys(bool on);
     void                   SetSoundPinned(bool on);
-    // Selbst hoeren: Soundboard-Clips und der Datei-Player kommen zusaetzlich auf dein Windows-Standard-Ausgabegeraet (eigene Ausgabe des Plugins, nicht ueber TS3).
-    // Ist "Mithoeren" an, hoerst du ohnehin ueber TS3 (dann pausiert diese Ausgabe, damit nichts doppelt klingt).
+    // Selbst hoeren: Soundboard-Clips (SetSoundMonitor) bzw. der Datei-Player (SetFileMonitor) kommen zusaetzlich auf dein Windows-Standard-Ausgabegeraet
+    // (eigene Ausgabe des Plugins, nicht ueber TS3). Ist "Mithoeren" an, hoerst du ohnehin ueber TS3 (dann pausiert diese Ausgabe, damit nichts doppelt klingt).
     void                   SetSoundMonitor(bool on);
+    void                   SetFileMonitor(bool on);
     SoundInfo              GetSound(int slot);
     std::vector<SoundInfo> GetSounds();
 
@@ -201,7 +210,13 @@ public:
 
 private:
     Engine() : ring_(48000), reader_(ring_), monitorRing_(48000 * 3), monitorReader_(monitorRing_), fileRing_(48000), fileReader_(fileRing_) {}
-    bool SourceOn() const { return capturing_.load() || fileActive_.load() || sounds_.Active(); } // irgendeine Quelle (App, Datei oder Soundboard) liefert Audio
+    bool SourceOn() const { return AppOn() || fileActive_.load() || sounds_.Active(); } // irgendeine Quelle (App, Datei oder Soundboard) liefert Audio
+    bool AppOn() const { return capturing_.load() && enabledA_.load(); }
+    // Mikrofon-Callback bzw. Pump (beide unter renderMutex_): liest die Quellen eines Blocks nach gained_ (App + Datei nach Mono/EQ/Lautstaerke, dazu die
+    // Clips) und schreibt fuer "Selbst hoeren" Datei + Clips (ohne App) auf die lokale Ausgabe. withApp = false: die App-Aufnahme nicht lesen.
+    // *audible: eine Musikquelle ist vor der Lautstaerke hoerbar (fuer das Nachhalten des Sende-Bits).
+    void RenderSources(int frames, bool withApp, bool* music, bool* voices, bool* audible);
+    void PumpMain(); // Ersatztakt, solange TS3 den Mikrofon-Callback nicht aufruft (stumm, keine Sprechberechtigung, nicht verbunden)
     void UpdateStats();
     void WatcherMain();
     void SetStatus(const std::wstring& s);
@@ -218,8 +233,12 @@ private:
     Soundboard         sounds_;
     std::atomic<float> soundGain_{1.0f};
     LocalOut           localOut_;               // Selbst hoeren (eigene Ausgabe)
-    std::atomic<bool>  soundMonitor_{true};
-    std::vector<int16_t> soundScratch_, localMix_; // nur Audio-Thread: Clips eines Blocks bzw. Mix fuer die lokale Ausgabe
+    std::atomic<bool>  soundMonitor_{true}, fileMonitor_{true};
+    std::vector<int16_t> soundScratch_, localMix_, fileScratch_; // unter renderMutex_: Clips eines Blocks, Mix fuer die lokale Ausgabe, Datei-Block
+    std::mutex         renderMutex_;            // schuetzt, was Mix() und die Pump gemeinsam anfassen (Reader, EQ, Stimmen, Puffer, monitorRing_-Schreiben)
+    std::atomic<ULONGLONG> lastMixTick_{0};     // letzter Aufruf des Mikrofon-Callbacks (GetTickCount64)
+    std::thread        pump_;
+    std::atomic<bool>  pumpQuit_{false};
     std::atomic<bool>  alwaysSend_{true};
     std::atomic<bool>  capturing_{false};
 
@@ -236,8 +255,10 @@ private:
     JitterReader                   fileReader_;
     std::atomic<bool>              fileActive_{false};         // Datei-Quelle ist gewaehlt (laeuft, pausiert oder leert gerade den Puffer)
     std::atomic<bool>              fileResetRequested_{false};
+    std::atomic<bool>              filePaused_{false};         // Kopie von playerPaused_ fuer Audio-Thread/Pump
     std::atomic<bool>              enabledA_{false};           // "Musik einspielen" (Kopie fuer den Audio-Thread)
-    bool                           usingFile_ = false;         // Audio-Thread: Datei oder App als Quelle
+    bool                           appWasOn_  = false;         // unter renderMutex_: App-Quelle war im letzten Block aktiv
+    bool                           fileWasOn_ = false;         // unter renderMutex_: Datei-Quelle war im letzten Block aktiv
     std::mutex                     playerMutex_;               // schuetzt playlist_, player_, playerPaused_, playerMsg_ ...
     playlist::Playlist             playlist_;
     std::unique_ptr<FilePlayer>    player_;
@@ -251,7 +272,8 @@ private:
     void StopPlayerLocked(bool drain);
     void HandlePlayerEvents(); // Watcher: Titelende -> naechster Titel, Puffer leeren
     void StartProber();
-    void EnsureEnabled();
+    void RememberPlaylistLocked(); // aktuelle Liste in settings_.lastPlaylist uebernehmen (playerMutex_ gehalten; nimmt mutex_)
+    void SetPausedLocked(bool paused); // playerPaused_ + Decoder + filePaused_ gemeinsam setzen (playerMutex_ gehalten)
     std::atomic<bool>              monitor_{false};
     std::atomic<bool>              monitorResetRequested_{false};
     std::vector<int16_t>           monScratch_; // Wiedergabe-Thread
@@ -261,7 +283,7 @@ private:
     std::vector<int16_t>           gained_;   // Musikblock nach EQ und Lautstaerke (Audio-Thread)
 
     void ApplyEqIfChanged(); // Audio-Thread
-    eq::Equalizer         equalizer_;           // nur Audio-Thread
+    eq::Equalizer         equalizer_, fileEq_;  // unter renderMutex_: App bzw. Datei (getrennt, damit "Selbst hoeren" die Datei ohne App bekommt; EQ ist linear)
     std::atomic<uint32_t> eqVersion_{1};
     uint32_t              eqApplied_ = 0;       // Audio-Thread
     std::vector<float>    eqGainsTmp_;          // Audio-Thread (vorreserviert)

@@ -13,7 +13,7 @@
 
 namespace {
 constexpr int     kAudiblePeak    = 8;     // Quellpegel (vor Lautstaerke) ab dem die Musik als hoerbar gilt
-constexpr int64_t kSendHoldFrames = 28800; // 600 ms
+constexpr int64_t kSendHoldFrames = 14400; // 300 ms Sende-Bit nach dem letzten hoerbaren Block
 
 size_t QualityFrames(int q)
 {
@@ -71,12 +71,22 @@ void Engine::Init(const std::wstring& configDir)
     status_     = settings_.enabled ? L"Warte auf App..." : L"Aus";
 
     soundMonitor_ = settings_.soundMonitor;
+    fileMonitor_  = settings_.fileMonitor;
+    {
+        std::lock_guard<std::mutex> lk(playerMutex_); // zuletzt benutzte Wiedergabeliste wiederherstellen (nicht abspielen)
+        playlist_.Clear();
+        for (const auto& p : settings_.lastPlaylist) playlist_.Add(p);
+        playlist_.repeat = static_cast<RepeatMode>(std::min(2, std::max(0, settings_.lastRepeat)));
+    }
+    if (!settings_.lastPlaylist.empty()) StartProber();
     localOut_.SetLogger(logger_);
     localOut_.Start();
     sounds_.Start(); // nach einem Shutdown wieder bereit (Plugin deaktiviert und wieder aktiviert)
-    quit_    = false;
-    wake_    = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    watcher_ = std::thread(&Engine::WatcherMain, this);
+    quit_     = false;
+    pumpQuit_ = false;
+    wake_     = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    watcher_  = std::thread(&Engine::WatcherMain, this);
+    pump_     = std::thread(&Engine::PumpMain, this);
 }
 
 void Engine::Shutdown()
@@ -84,6 +94,8 @@ void Engine::Shutdown()
     quit_ = true;
     if (wake_) SetEvent(wake_);
     if (watcher_.joinable()) watcher_.join();
+    pumpQuit_ = true;
+    if (pump_.joinable()) pump_.join(); // Ersatztakt (benutzt Soundboard, Datei-Ring und lokale Ausgabe)
     sounds_.Stop(); // Lade-Thread des Soundboards (muss vor dem Entladen der DLL weg sein)
     localOut_.Stop(); // ebenso der Thread der lokalen Ausgabe
     std::atomic_store(&opus_, std::shared_ptr<OpusPreview>());
@@ -120,14 +132,7 @@ void Engine::SetEnabled(bool on)
         SaveLocked();
     }
     if (wake_) SetEvent(wake_);
-    if (changed && stateCb_) stateCb_(on);
-    if (!on) {
-        std::lock_guard<std::mutex> lk(playerMutex_);
-        if (player_) {
-            player_->SetPaused(true); // "Musik einspielen" aus: Datei anhalten (Position bleibt)
-            playerPaused_ = true;
-        }
-    }
+    if (changed && stateCb_) stateCb_(on); // der Schalter gilt nur fuer die App; Datei-Player und Soundboard laufen unabhaengig davon
 }
 
 void Engine::SetEqEnabled(bool on)
@@ -366,7 +371,7 @@ void Engine::UpdatePreview()
     monitorResetRequested_ = true; // neues Ziel sofort uebernehmen
 }
 
-// Audio-Thread: neue EQ-Werte uebernehmen (try_lock: blockiert nie auf die Oberflaeche).
+// Audio-Thread bzw. Pump (unter renderMutex_): neue EQ-Werte uebernehmen (try_lock: blockiert nie auf die Oberflaeche).
 void Engine::ApplyEqIfChanged()
 {
     const uint32_t v = eqVersion_.load(std::memory_order_relaxed);
@@ -377,6 +382,7 @@ void Engine::ApplyEqIfChanged()
     mutex_.unlock();
     eqGainsTmp_.resize(bands, 0.0f);
     equalizer_.Configure(bands, eqGainsTmp_.data(), en);
+    fileEq_.Configure(bands, eqGainsTmp_.data(), en);
     eqApplied_ = v;
 }
 
@@ -469,13 +475,18 @@ Settings Engine::GetSettings()
 
 std::wstring Engine::Status()
 {
-    if (fileActive_.load()) {
+    std::wstring app;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        app = status_;
+    }
+    // Datei spielt (nicht pausiert): sie hat Vorrang in der Anzeige; laeuft zugleich die App, steht das dabei ("+ App")
+    if (fileActive_.load() && !filePaused_.load()) {
         std::lock_guard<std::mutex> lk(playerMutex_);
         if (playlist_.current >= 0 && playlist_.current < static_cast<int>(playlist_.items.size()))
-            return std::wstring(playerPaused_ ? L"Aktiv: Datei pausiert – " : L"Aktiv: Datei – ") + playlist_.items[playlist_.current].title;
+            return std::wstring(AppOn() ? L"Aktiv: Datei + App – " : L"Aktiv: Datei – ") + playlist_.items[playlist_.current].title;
     }
-    std::lock_guard<std::mutex> lk(mutex_);
-    return status_;
+    return app;
 }
 
 void Engine::SetStatus(const std::wstring& s)
@@ -623,7 +634,9 @@ void Engine::UpdateNowPlaying()
 {
     if (!nowPlayingCb_) return;
     const Settings s      = GetSettings();
-    const bool     wanted = s.enabled && (s.nowPlayingChat || s.nowPlayingChannel || s.nowPlayingMeta);
+    // Datei-Player laeuft unabhaengig von "Musik einspielen": auch dann melden
+    const bool     fileOn = fileActive_.load() && !filePaused_.load();
+    const bool     wanted = (s.enabled || fileOn) && (s.nowPlayingChat || s.nowPlayingChannel || s.nowPlayingMeta);
     if (!wanted) {
         npCand_.clear();
         if (!npLast_.empty()) {
@@ -637,10 +650,10 @@ void Engine::UpdateNowPlaying()
     npTick_ = now;
 
     std::wstring title;
-    if (fileActive_.load()) {
+    if (fileOn) {
         std::lock_guard<std::mutex> lk(playerMutex_);
         if (player_ && !playerPaused_ && playlist_.current >= 0 && playlist_.current < static_cast<int>(playlist_.items.size())) title = playlist_.items[playlist_.current].title;
-    } else if (capturing_.load() && !s.targetExe.empty()) {
+    } else if (s.enabled && capturing_.load() && !s.targetExe.empty()) {
         const auto  apps = DiscoverApps();
         const auto* app  = FindByExe(apps, s.targetExe);
         if (app && app->playing) title = nowplaying::CleanTrackTitle(app->title, s.targetExe);
@@ -681,10 +694,10 @@ void Engine::SetOpusPreview(bool on)
 
 // Musikmodus, im Mikrofon-Callback (TS3-Thread) ausgefuehrt, so wie es auch das Soundboard-Plugin macht: TS3 ruft diesen Callback NACH seiner
 // Vorverarbeitung auf. Die Sprachaktivierung startet eine Uebertragung nie von selbst, nur weil das Plugin Musik einmischt; sie muss ausgeschaltet
-// und der Eingang aktiv sein (= Dauersenden), solange die Musik laeuft. Danach (2,5 s Nachlauf) stellen wir die Werte des Nutzers wieder her.
+// und der Eingang aktiv sein (= Dauersenden), solange die Musik laeuft. Danach (ca. 1 s Nachlauf) stellen wir die Werte des Nutzers wieder her.
 void Engine::ManageMusicMode(uint64_t schid, int frames)
 {
-    constexpr int64_t kGraceFrames = 120000; // 2,5 s
+    constexpr int64_t kGraceFrames = 33600; // 0,7 s (zusammen mit kSendHoldFrames ca. 1 s nach dem letzten Ton)
     const bool        active = SourceOn() && holdFrames_ > 0;
     graceFrames_             = active ? kGraceFrames : std::max<int64_t>(0, graceFrames_ - frames);
     unsigned mask = 0;
@@ -739,7 +752,7 @@ void Engine::UpdateStats()
     statsTick_        = now;
 
     const uint32_t cb        = callbacks_.load();
-    JitterReader&  rd        = fileActive_.load() ? fileReader_ : reader_;
+    JitterReader&  rd        = AppOn() || !fileActive_.load() ? reader_ : fileReader_; // Diagnose: App vor Datei
     const uint32_t underruns = rd.underruns.load(), overruns = rd.overruns.load();
     const size_t   minFill   = rd.minFill.exchange(SIZE_MAX), maxFill = rd.maxFill.exchange(0);
     const double   perSec    = (cb - statsCallbacks_) / secs;
@@ -786,9 +799,135 @@ void Engine::GetLevels(float* left, float* right) const
     *right = levelR_.load();
 }
 
+// Unter renderMutex_ (Mikrofon-Callback oder Pump). Liest App (withApp) und Datei, bereitet sie auf (Mono -> EQ -> Lautstaerke), mischt die Clips dazu und
+// legt das Ergebnis nach gained_ (genau das, was ins Mikrofon und ins Mithoeren geht). "Selbst hoeren": Datei-Musik und Clips (ohne App-Ton, den hoerst du
+// ohnehin selbst) zusaetzlich auf die eigene Ausgabe; bei "Mithoeren" hoerst du ueber TS3, dann bleibt sie still.
+void Engine::RenderSources(int frames, bool withApp, bool* music, bool* voices, bool* audible)
+{
+    const size_t need = static_cast<size_t>(frames) * 2;
+    if (scratch_.size() < need) scratch_.resize(need);
+    if (fileScratch_.size() < need) fileScratch_.resize(need);
+    if (gained_.size() < need) gained_.resize(need);
+    if (soundScratch_.size() < need) soundScratch_.resize(need);
+    if (localMix_.size() < need) localMix_.resize(need);
+
+    const bool appOn  = withApp && AppOn();
+    const bool fileOn = fileActive_.load(std::memory_order_relaxed);
+    if (resetRequested_.exchange(false)) { // Watcher hat die Aufnahme neu verbunden
+        reader_.Reset();
+        analysis_.Clear();
+    }
+    if (appOn != appWasOn_) { // App kommt (wieder) dazu: alte Daten verwerfen, sauber neu puffern
+        appWasOn_ = appOn;
+        if (appOn) {
+            ring_.Clear();
+            reader_.Reset();
+        }
+    }
+    if (fileResetRequested_.exchange(false)) fileReader_.Reset();
+    if (fileOn != fileWasOn_) {
+        fileWasOn_ = fileOn;
+        if (fileOn) fileReader_.Reset();
+    }
+
+    const bool appMusic  = appOn && reader_.Read(scratch_.data(), frames);
+    const bool fileMusic = fileOn && fileReader_.Read(fileScratch_.data(), frames);
+    int        pl = 0, pr = 0, peak = 0;
+    if (appMusic) {
+        mixer::PeakStereo(scratch_.data(), frames, &pl, &pr);
+        peak = std::max(pl, pr);
+    }
+    if (fileMusic) {
+        mixer::PeakStereo(fileScratch_.data(), frames, &pl, &pr);
+        peak = std::max(peak, std::max(pl, pr));
+    }
+    *audible = peak > kAudiblePeak;
+
+    const bool  mono      = mono_.load(std::memory_order_relaxed);
+    const float musicGain = musicGain_.load();
+    auto        prepare   = [&](std::vector<int16_t>& buf, eq::Equalizer& eqz) {
+        if (mono)
+            for (int i = 0; i < frames; ++i) buf[2 * i] = buf[2 * i + 1] = static_cast<int16_t>((buf[2 * i] + buf[2 * i + 1]) / 2);
+        eqz.Process(buf.data(), frames);
+    };
+    if (appMusic) prepare(scratch_, equalizer_);
+    if (fileMusic) prepare(fileScratch_, fileEq_);
+    for (size_t i = 0; i < need; ++i) {
+        const float sum = (appMusic ? static_cast<float>(scratch_[i]) : 0.0f) + (fileMusic ? static_cast<float>(fileScratch_[i]) : 0.0f);
+        gained_[i]      = mixer::SoftClip(sum * musicGain);
+    }
+    *music = appMusic || fileMusic;
+
+    const bool selfHear = !monitor_.load(std::memory_order_relaxed);
+    bool       localAny = false;
+    if (selfHear && fileMusic && fileMonitor_.load(std::memory_order_relaxed)) {
+        for (size_t i = 0; i < need; ++i) localMix_[i] = mixer::SoftClip(fileScratch_[i] * musicGain);
+        localAny = true;
+    }
+    // Soundboard: laufende Clips kommen ueber die Musik (nach EQ und Musik-Lautstaerke, vor Optimierer/Begrenzer, mit eigener Lautstaerke). Erst allein rendern,
+    // dann addieren: so lassen sie sich auch ohne Musik auf die lokale Ausgabe legen.
+    bool mixedVoices = false;
+    if (sounds_.Active()) {
+        std::fill(soundScratch_.begin(), soundScratch_.begin() + static_cast<std::ptrdiff_t>(need), static_cast<int16_t>(0));
+        mixedVoices = sounds_.Mix(soundScratch_.data(), frames, soundGain_.load(std::memory_order_relaxed));
+        if (mixedVoices) {
+            for (size_t i = 0; i < need; ++i) gained_[i] = static_cast<int16_t>(std::clamp(static_cast<int>(gained_[i]) + soundScratch_[i], -32768, 32767));
+            if (selfHear && soundMonitor_.load(std::memory_order_relaxed)) {
+                if (!localAny) std::fill(localMix_.begin(), localMix_.begin() + static_cast<std::ptrdiff_t>(need), static_cast<int16_t>(0));
+                for (size_t i = 0; i < need; ++i) localMix_[i] = static_cast<int16_t>(std::clamp(static_cast<int>(localMix_[i]) + soundScratch_[i], -32768, 32767));
+                localAny = true;
+            }
+        }
+    }
+    *voices = mixedVoices;
+    if (localAny) localOut_.Write(localMix_.data(), static_cast<size_t>(frames));
+}
+
+// Ersatztakt: TS3 ruft den Mikrofon-Callback nicht auf, solange du stumm bist, keine Sprechberechtigung hast oder nicht verbunden bist. Ohne diesen Takt
+// wuerden Clips und Dateien stehen bleiben und spaeter alle auf einmal starten (wie eine Warteschlange). Hier laufen sie nach der Uhr weiter und sind lokal
+// zu hoeren ("Selbst hoeren" bzw. Mithoeren); gesendet wird in dieser Zeit nichts (das ginge ohnehin nicht). Sobald TS3 wieder ruft, uebernimmt Mix().
+void Engine::PumpMain()
+{
+    constexpr int       kChunk    = 960;  // 20 ms
+    constexpr ULONGLONG kSilentMs = 150;  // so lange ohne Mikrofon-Callback = TS3 mischt gerade nicht
+    LARGE_INTEGER       freq{}, last{};
+    QueryPerformanceFrequency(&freq);
+    bool   running = false;
+    double owed    = 0; // noch zu erzeugende Frames
+    while (!pumpQuit_.load()) {
+        Sleep(10);
+        const bool tsIdle = GetTickCount64() - lastMixTick_.load() > kSilentMs;
+        const bool work   = sounds_.Active() || (fileActive_.load() && !filePaused_.load());
+        if (!tsIdle || !work) {
+            running = false;
+            continue;
+        }
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        if (!running) { // gleich den ersten Block erzeugen, damit der Klick sofort hoerbar wird
+            running = true;
+            owed    = kChunk;
+        } else {
+            owed += static_cast<double>(now.QuadPart - last.QuadPart) * 48000.0 / static_cast<double>(freq.QuadPart);
+        }
+        last = now;
+        owed = std::min(owed, 4800.0); // nach einem Haenger nicht nachholen (hoechstens 100 ms)
+        while (owed >= kChunk && !pumpQuit_.load()) {
+            std::lock_guard<std::mutex> lk(renderMutex_);
+            if (GetTickCount64() - lastMixTick_.load() <= kSilentMs) break; // TS3 ruft wieder
+            ApplyEqIfChanged();
+            bool music = false, voices = false, audible = false;
+            RenderSources(kChunk, false, &music, &voices, &audible);
+            if (monitor_.load(std::memory_order_relaxed)) monitorRing_.Write(gained_.data(), kChunk); // Mithoeren: fortlaufend, wie in Mix()
+            owed -= kChunk;
+        }
+    }
+}
+
 void Engine::Mix(uint64_t schid, short* samples, int frames, int channels, int* edited)
 {
     lastSchid_.store(schid, std::memory_order_relaxed);
+    lastMixTick_.store(GetTickCount64(), std::memory_order_relaxed);
     if (frames <= 0 || channels <= 0) return;
     const bool tsSends = (*edited & 2) != 0; // laut Plugin-API: TS3 sendet diesen Block (gemeldet, bevor wir etwas aendern)
     ManageMusicMode(schid, frames);
@@ -796,79 +935,26 @@ void Engine::Mix(uint64_t schid, short* samples, int frames, int channels, int* 
         std::memset(samples, 0, static_cast<size_t>(frames) * static_cast<size_t>(channels) * sizeof(short));
         *edited |= 1;
     }
-    const bool fileSrc = fileActive_.load(std::memory_order_relaxed) && enabledA_.load(std::memory_order_relaxed);
-    const bool srcOn  = capturing_.load() || fileSrc;       // App oder Datei liefert Musik
-    const bool voices = sounds_.Active();                    // Soundboard-Clip laeuft oder wurde gerade ausgeloest
-    if (!srcOn && !voices) return;
-    if (srcOn) {
-        if (resetRequested_.exchange(false)) {
-            reader_.Reset();
-            holdFrames_ = 0;
-            analysis_.Clear();
+    if (!AppOn() && !fileActive_.load(std::memory_order_relaxed) && !sounds_.Active()) {
+        holdFrames_ = std::max<int64_t>(0, holdFrames_ - frames);
+        if (micGain_.load() != 1.0f) { // Mikrofon-Lautstaerke gilt auch ohne Musik
+            mixer::MixInto(reinterpret_cast<int16_t*>(samples), frames, channels, nullptr, 0, micGain_.load(), 1.0f);
+            *edited |= 1;
         }
-        if (fileResetRequested_.exchange(false)) {
-            fileReader_.Reset();
-            holdFrames_ = 0;
-        }
-        if (fileSrc != usingFile_) { // Quellenwechsel App <-> Datei: sauber neu puffern, alte App-Daten verwerfen
-            usingFile_ = fileSrc;
-            (fileSrc ? fileReader_ : reader_).Reset();
-            if (!fileSrc) ring_.Clear();
-            holdFrames_ = 0;
-        }
+        return;
     }
-    JitterReader& rd = fileSrc ? fileReader_ : reader_;
+    std::unique_lock<std::mutex> render(renderMutex_); // die Pump haelt ihn hoechstens fuer einen 20-ms-Block
     callbacks_.fetch_add(1, std::memory_order_relaxed);
     lastBlock_.store(frames, std::memory_order_relaxed);
     ApplyEqIfChanged();
 
     const size_t need = static_cast<size_t>(frames) * 2;
-    if (scratch_.size() < need) scratch_.resize(need);
-    if (gained_.size() < need) gained_.resize(need);
-    const bool music = srcOn && rd.Read(scratch_.data(), frames);
+    bool music = false, mixedVoices = false, audible = false;
+    RenderSources(frames, true, &music, &mixedVoices, &audible);
 
-    // Sende-Bit nachhalten: sobald die Quelle hoerbar ist, 600 ms lang "senden", unabhaengig vom Pegel einzelner Bloecke.
-    int srcL = 0, srcR = 0;
-    if (music) mixer::PeakStereo(scratch_.data(), frames, &srcL, &srcR);
-    if (std::max(srcL, srcR) > kAudiblePeak) holdFrames_ = kSendHoldFrames;
+    // Sende-Bit nachhalten: sobald eine Quelle hoerbar ist, kSendHoldFrames lang "senden", unabhaengig vom Pegel einzelner Bloecke.
+    if (audible || mixedVoices) holdFrames_ = kSendHoldFrames;
     else holdFrames_ = std::max<int64_t>(0, holdFrames_ - frames);
-
-    // Musikblock aufbereiten: Mono -> EQ -> Lautstaerke. `gained_` ist genau das, was ins Mikrofon (und ins Mithoeren) geht.
-    const float musicGain = musicGain_.load();
-    if (music) {
-        if (mono_.load(std::memory_order_relaxed))
-            for (int i = 0; i < frames; ++i) scratch_[2 * i] = scratch_[2 * i + 1] = static_cast<int16_t>((scratch_[2 * i] + scratch_[2 * i + 1]) / 2);
-        equalizer_.Process(scratch_.data(), frames);
-        for (size_t i = 0; i < need; ++i) gained_[i] = mixer::SoftClip(scratch_[i] * musicGain);
-    } else {
-        std::fill(gained_.begin(), gained_.begin() + static_cast<std::ptrdiff_t>(need), static_cast<int16_t>(0));
-    }
-    // Soundboard: laufende Clips kommen ueber die Musik (nach EQ und Musik-Lautstaerke, vor Optimierer/Begrenzer, mit eigener Lautstaerke)
-    // "Selbst hoeren": Datei-Player-Musik und Clips (ohne App-Ton, den hoerst du ohnehin selbst) zusaetzlich auf die eigene Ausgabe. Bei "Mithoeren" hoerst du ueber TS3.
-    const bool selfHear = soundMonitor_.load(std::memory_order_relaxed) && !monitor_.load(std::memory_order_relaxed);
-    bool       localAny = false;
-    if (selfHear && fileSrc && music) {
-        if (localMix_.size() < need) localMix_.resize(need);
-        std::copy(gained_.begin(), gained_.begin() + static_cast<std::ptrdiff_t>(need), localMix_.begin());
-        localAny = true;
-    }
-    bool mixedVoices = false;
-    if (voices) { // die Stimmen erst allein rendern und dann zur Musik addieren: so lassen sie sich auch ohne Musik auf die lokale Ausgabe legen
-        if (soundScratch_.size() < need) soundScratch_.resize(need);
-        std::fill(soundScratch_.begin(), soundScratch_.begin() + static_cast<std::ptrdiff_t>(need), static_cast<int16_t>(0));
-        mixedVoices = sounds_.Mix(soundScratch_.data(), frames, soundGain_.load(std::memory_order_relaxed));
-        if (mixedVoices) {
-            for (size_t i = 0; i < need; ++i) gained_[i] = static_cast<int16_t>(std::clamp(static_cast<int>(gained_[i]) + soundScratch_[i], -32768, 32767));
-            if (selfHear) {
-                if (localMix_.size() < need) localMix_.resize(need);
-                if (!localAny) std::fill(localMix_.begin(), localMix_.begin() + static_cast<std::ptrdiff_t>(need), static_cast<int16_t>(0));
-                for (size_t i = 0; i < need; ++i) localMix_[i] = static_cast<int16_t>(std::clamp(static_cast<int>(localMix_[i]) + soundScratch_[i], -32768, 32767));
-                localAny = true;
-            }
-        }
-    }
-    if (localAny) localOut_.Write(localMix_.data(), static_cast<size_t>(frames));
-    if (mixedVoices) holdFrames_ = kSendHoldFrames;
     const bool audio    = music || mixedVoices;
     const bool sendBit  = alwaysSend_.load() && holdFrames_ > 0;
     if (audio) { // Diagnose: wie oft gibt TS3 den Block zum Senden frei?
@@ -1010,7 +1096,7 @@ void Engine::SoundPlay(int slot)
     if (slot < 0 || slot >= kSoundSlots) return;
     const Soundboard::State st = sounds_.GetState(slot);
     if (st != Soundboard::State::Ready && st != Soundboard::State::Unloaded && st != Soundboard::State::Loading) return;
-    // Bewusst kein EnsureEnabled(): Clips werden im Mikrofon-Callback gemischt und brauchen "Musik einspielen" nicht. Der Schalter bleibt, wie er ist
+    // Bewusst ohne "Musik einspielen": Clips werden im Mikrofon-Callback (bzw. im Ersatztakt) gemischt und brauchen den Schalter nicht. Er bleibt, wie er ist
     // (er wuerde sonst auch die gewaehlte App ins Mikrofon holen).
     sounds_.Play(slot);
     if (wake_) SetEvent(wake_);
@@ -1047,10 +1133,19 @@ void Engine::SetSoundShowKeys(bool on)
 
 void Engine::SetSoundMonitor(bool on)
 {
-    if (!on) localOut_.Clear();
     soundMonitor_ = on;
+    if (!on && !fileMonitor_.load()) localOut_.Clear(); // Rest verwerfen, wenn gar nichts mehr lokal laufen soll
     std::lock_guard<std::mutex> lk(mutex_);
     settings_.soundMonitor = on;
+    SaveLocked();
+}
+
+void Engine::SetFileMonitor(bool on)
+{
+    fileMonitor_ = on;
+    if (!on && !soundMonitor_.load()) localOut_.Clear();
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.fileMonitor = on;
     SaveLocked();
 }
 
@@ -1073,8 +1168,9 @@ Engine::SoundInfo Engine::GetSound(int slot)
         out.color          = b.color;
         out.volPct         = b.volPct;
     }
-    out.state   = sounds_.GetState(slot);
-    out.seconds = sounds_.Seconds(slot);
+    out.state    = sounds_.GetState(slot);
+    out.seconds  = sounds_.Seconds(slot);
+    out.position = sounds_.Position(slot);
     return out;
 }
 
@@ -1085,9 +1181,11 @@ std::vector<Engine::SoundInfo> Engine::GetSounds()
     return out;
 }
 
-void Engine::EnsureEnabled()
+void Engine::SetPausedLocked(bool paused)
 {
-    if (!GetSettings().enabled) SetEnabled(true); // "Play" soll auch bei ausgeschaltetem Hauptschalter etwas bewirken
+    playerPaused_ = paused;
+    filePaused_   = paused;
+    if (player_) player_->SetPaused(paused);
 }
 
 // Startet Titel `index`. gapless = der Puffer des vorigen Titels spielt weiter, der neue schliesst nahtlos an (Titelende).
@@ -1109,6 +1207,7 @@ void Engine::StartTrackLocked(int index, double startSec, bool gapless)
     });
     player_->Start(playlist_.items[index].path, startSec);
     playerPaused_ = false;
+    filePaused_   = false;
     playerMsg_.clear();
     drainUntil_ = 0;
     fileActive_ = true;
@@ -1119,6 +1218,7 @@ void Engine::StopPlayerLocked(bool drain)
 {
     player_.reset();
     playerPaused_ = false;
+    filePaused_   = false;
     if (drain && fileActive_.load()) {
         drainUntil_ = GetTickCount64() + 1000;
     } else {
@@ -1206,53 +1306,40 @@ int Engine::PlayerAdd(const std::vector<std::wstring>& paths)
     int added = 0;
     {
         std::lock_guard<std::mutex> lk(playerMutex_);
-        for (const auto& p : paths) added += playlist_.Add(p) >= 0 ? 1 : 0;
+        for (const auto& p : paths) {
+            const bool dup = std::any_of(playlist_.items.begin(), playlist_.items.end(), [&](const Track& t) { return playlist::ToLowerCopy(t.path) == playlist::ToLowerCopy(p); });
+            if (!dup && playlist_.Add(p) >= 0) ++added; // Duplikate nicht doppelt aufnehmen
+        }
+        if (added) RememberPlaylistLocked();
     }
     if (added) StartProber();
     return added;
 }
 
+// Datei-Player braucht "Musik einspielen" nicht (der Schalter gilt nur fuer die App): Play schaltet ihn bewusst nicht ein.
 void Engine::PlayerPlay(int index)
 {
-    {
-        std::lock_guard<std::mutex> lk(playerMutex_);
-        const int n = static_cast<int>(playlist_.items.size());
-        if (n == 0) return;
-        if (index < 0) {
-            if (player_ && player_->Running()) { // laeuft schon bzw. ist pausiert -> fortsetzen
-                player_->SetPaused(false);
-                playerPaused_ = false;
-            } else {
-                StartTrackLocked(playlist_.current >= 0 && playlist_.current < n ? playlist_.current : 0, 0, false);
-            }
-        } else {
-            StartTrackLocked(index, 0, false);
-        }
-    }
-    EnsureEnabled();
-    {
-        std::lock_guard<std::mutex> lk(playerMutex_); // nach dem Einschalten ggf. von "pausiert wegen Aus" befreien
-        if (player_ && playerPaused_ && enabledA_.load()) {
-            player_->SetPaused(false);
-            playerPaused_ = false;
-        }
+    std::lock_guard<std::mutex> lk(playerMutex_);
+    const int n = static_cast<int>(playlist_.items.size());
+    if (n == 0) return;
+    if (index < 0) {
+        if (player_ && player_->Running()) SetPausedLocked(false); // laeuft schon bzw. ist pausiert -> fortsetzen
+        else StartTrackLocked(playlist_.current >= 0 && playlist_.current < n ? playlist_.current : 0, 0, false);
+    } else {
+        StartTrackLocked(index, 0, false);
     }
 }
 
 void Engine::PlayerTogglePause()
 {
-    bool resume = false;
     {
         std::lock_guard<std::mutex> lk(playerMutex_);
         if (player_ && player_->Running()) {
-            playerPaused_ = !playerPaused_;
-            player_->SetPaused(playerPaused_);
-            resume        = !playerPaused_;
-        } else {
-            resume = true;
+            SetPausedLocked(!playerPaused_);
+            return;
         }
     }
-    if (resume) PlayerPlay(-1);
+    PlayerPlay(-1);
 }
 
 void Engine::PlayerStop()
@@ -1282,28 +1369,28 @@ void Engine::PlayerPrev()
 
 void Engine::PlayerSeek(double seconds)
 {
-    bool restarted = false;
-    {
-        std::lock_guard<std::mutex> lk(playerMutex_);
-        if (playlist_.current < 0 || playlist_.current >= static_cast<int>(playlist_.items.size())) return;
-        seconds = std::max(0.0, seconds);
-        if (player_ && player_->Running()) {
-            player_->Seek(seconds);
-            fileResetRequested_ = true;
-        } else { // Datei war schon zu Ende (oder gestoppt): ab der Stelle neu starten
-            StartTrackLocked(playlist_.current, seconds, false);
-            restarted = true;
-        }
+    std::lock_guard<std::mutex> lk(playerMutex_);
+    if (playlist_.current < 0 || playlist_.current >= static_cast<int>(playlist_.items.size())) return;
+    seconds = std::max(0.0, seconds);
+    if (player_ && player_->Running()) {
+        player_->Seek(seconds);
+        fileResetRequested_ = true;
+    } else { // Datei war schon zu Ende (oder gestoppt): ab der Stelle neu starten
+        StartTrackLocked(playlist_.current, seconds, false);
     }
-    if (restarted) EnsureEnabled();
 }
 
 void Engine::PlayerRemove(int index)
 {
     std::lock_guard<std::mutex> lk(playerMutex_);
     const bool wasCurrent = index == playlist_.current && fileActive_.load();
+    const bool wasPaused  = playerPaused_;
     if (!playlist_.Remove(index)) return;
-    if (wasCurrent) StartTrackLocked(index < static_cast<int>(playlist_.items.size()) ? index : -1, 0, false); // der naechste rueckt nach
+    RememberPlaylistLocked();
+    if (wasCurrent) {
+        StartTrackLocked(index < static_cast<int>(playlist_.items.size()) ? index : -1, 0, false); // der naechste rueckt nach
+        if (wasPaused && player_) SetPausedLocked(true); // pausiert bleibt pausiert
+    }
 }
 
 void Engine::PlayerClear()
@@ -1311,12 +1398,93 @@ void Engine::PlayerClear()
     std::lock_guard<std::mutex> lk(playerMutex_);
     playlist_.Clear();
     StopPlayerLocked(false);
+    RememberPlaylistLocked();
 }
 
 void Engine::PlayerSetRepeat(RepeatMode mode)
 {
     std::lock_guard<std::mutex> lk(playerMutex_);
     playlist_.repeat = mode;
+    RememberPlaylistLocked();
+}
+
+void Engine::RememberPlaylistLocked()
+{
+    std::vector<std::wstring> paths;
+    paths.reserve(playlist_.items.size());
+    for (const auto& t : playlist_.items) paths.push_back(t.path);
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.lastPlaylist = std::move(paths);
+    settings_.lastRepeat   = static_cast<int>(playlist_.repeat);
+    dirty_                 = true; // der Watcher speichert (nicht bei jedem Klick auf die Platte)
+}
+
+PresetResult Engine::PlaylistSave(const std::wstring& name)
+{
+    std::vector<std::wstring> paths;
+    {
+        std::lock_guard<std::mutex> lk(playerMutex_);
+        for (const auto& t : playlist_.items) paths.push_back(t.path);
+    }
+    std::lock_guard<std::mutex> lk(mutex_);
+    const PresetResult r = settings_.playlists.Save(name, paths);
+    if (r == PresetResult::Ok || r == PresetResult::Updated) {
+        settings_.playlistName = presets::Sanitize(name);
+        SaveLocked();
+    }
+    return r;
+}
+
+PresetResult Engine::PlaylistRename(const std::wstring& from, const std::wstring& to)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    const PresetResult r = settings_.playlists.Rename(from, to);
+    if (r == PresetResult::Ok) {
+        if (presets::EqualNoCase(settings_.playlistName, from)) settings_.playlistName = presets::Sanitize(to);
+        SaveLocked();
+    }
+    return r;
+}
+
+bool Engine::PlaylistDelete(const std::wstring& name)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    const bool ok = settings_.playlists.Delete(name);
+    if (ok) {
+        if (presets::EqualNoCase(settings_.playlistName, name)) settings_.playlistName.clear();
+        SaveLocked();
+    }
+    return ok;
+}
+
+bool Engine::PlaylistLoad(const std::wstring& name)
+{
+    SavedPlaylist pl;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        const SavedPlaylist* f = settings_.playlists.Find(name);
+        if (!f) return false;
+        pl                     = *f;
+        settings_.playlistName = pl.name;
+    }
+    {
+        std::lock_guard<std::mutex> lk(playerMutex_);
+        StopPlayerLocked(false);
+        playlist_.Clear();
+        playerMsg_.clear();
+        for (const auto& p : pl.paths) playlist_.Add(p);
+        RememberPlaylistLocked();
+    }
+    StartProber();
+    return true;
+}
+
+std::vector<std::wstring> Engine::PlaylistNames()
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    std::vector<std::wstring>   names;
+    for (const auto& p : settings_.playlists.items) names.push_back(p.name);
+    return names;
 }
 
 PlayerSnapshot Engine::GetPlayer()
@@ -1340,10 +1508,6 @@ PlayerSnapshot Engine::GetPlayer()
 
 std::wstring Engine::SourceLabel()
 {
-    if (fileActive_.load()) {
-        std::lock_guard<std::mutex> lk(playerMutex_);
-        if (playlist_.current >= 0 && playlist_.current < static_cast<int>(playlist_.items.size())) return std::wstring(Tr(L"Datei: ")) + playlist_.items[playlist_.current].title;
-    }
     const std::wstring exe = GetSettings().targetExe;
     return exe.empty() ? std::wstring(Tr(L"keine App gewählt")) : PrettyExeName(exe);
 }

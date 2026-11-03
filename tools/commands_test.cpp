@@ -61,6 +61,12 @@ int main()
     CHECK(RunCommand("monitor") && en.GetSettings().monitor == !mon && RunCommand("monitor") && en.GetSettings().monitor == mon, "monitor");
     const bool smon = en.GetSettings().soundMonitor;
     CHECK(RunCommand("soundmonitor") && en.GetSettings().soundMonitor == !smon && RunCommand("soundmonitor") && en.GetSettings().soundMonitor == smon, "soundmonitor");
+    const bool fmon = en.GetSettings().fileMonitor;
+    CHECK(RunCommand("filemonitor") && en.GetSettings().fileMonitor == !fmon && en.GetSettings().soundMonitor == smon && RunCommand("filemonitor") && en.GetSettings().fileMonitor == fmon,
+          "filemonitor (unabhaengig von soundmonitor)");
+    CHECK(!RunCommandPath("playlist/gibt%20es%20nicht") && !RunCommand("playlist"), "unbekannte Wiedergabeliste");
+    CHECK(en.PlaylistSave(L"Cmd Liste") == PresetResult::Ok && RunCommandPath("playlist/cmd%20liste") && en.GetSettings().playlistName == L"Cmd Liste" && en.PlaylistDelete(L"Cmd Liste"),
+          "playlist/<Name> laedt eine gespeicherte Liste");
 
     // EQ-Presets: mitgelieferte (Gross-/Kleinschreibung egal, URL-kodiert) und eigene
     const std::wstring builtin = eq::PresetName(1);

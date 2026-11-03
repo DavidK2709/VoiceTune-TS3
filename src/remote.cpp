@@ -53,6 +53,8 @@ std::string StateJson() {
            ",\"playing\":" + ((p.active && !p.paused) ? "true" : "false") +
            ",\"monitor\":" + (s.monitor ? "true" : "false") +
            ",\"soundMonitor\":" + (s.soundMonitor ? "true" : "false") +
+           ",\"fileMonitor\":" + (s.fileMonitor ? "true" : "false") +
+           ",\"playlist\":\"" + JsonEsc(WideToUtf8(s.playlistName)) + "\"" +
            ",\"profile\":\"" + JsonEsc(WideToUtf8(s.profileName)) + "\"" +
            ",\"preset\":\"" + JsonEsc(WideToUtf8(s.eqPresetName)) + "\"" +
            ",\"source\":\"" + JsonEsc(WideToUtf8(e.SourceLabel())) + "\"}";
@@ -69,6 +71,10 @@ std::string PresetsJson() {
 
 std::string ProfilesJson() {
     return "{\"profiles\":" + JsonStrArray(Engine::Get().ProfileNames()) + ",\"current\":\"" + JsonEsc(WideToUtf8(Engine::Get().GetSettings().profileName)) + "\"}";
+}
+
+std::string PlaylistsJson() {
+    return "{\"playlists\":" + JsonStrArray(Engine::Get().PlaylistNames()) + ",\"current\":\"" + JsonEsc(WideToUtf8(Engine::Get().GetSettings().playlistName)) + "\"}";
 }
 
 std::string SoundsJson() {
@@ -94,6 +100,7 @@ std::string Handle(const std::string& req) {
     if (method == "GET" && path == "/presets") return Reply(200, "OK", PresetsJson());
     if (method == "GET" && path == "/profiles") return Reply(200, "OK", ProfilesJson());
     if (method == "GET" && path == "/sounds") return Reply(200, "OK", SoundsJson());
+    if (method == "GET" && path == "/playlists") return Reply(200, "OK", PlaylistsJson());
 
     if (method == "POST" && path.rfind("/cmd/", 0) == 0) {
         // Schutz gegen fremde Webseiten: ein eigener Header loest im Browser einen Preflight aus, den wir nie beantworten

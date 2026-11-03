@@ -11,6 +11,62 @@ namespace {
 const wchar_t* kSection = L"VoiceTune";
 
 int Clamp200(int v) { return std::min(200, std::max(0, v)); }
+
+// Die INI-Funktionen von Windows lesen hoechstens 32767 Zeichen je Wert: Wiedergabelisten werden darauf begrenzt (ganze Pfade, der Rest entfaellt).
+constexpr size_t kMaxIniLine = 32767;
+
+std::wstring JoinCapped(const std::vector<std::wstring>& paths)
+{
+    std::wstring out;
+    for (const auto& path : paths) {
+        if (path.empty()) continue;
+        if (out.size() + path.size() + 1 >= kMaxIniLine) break;
+        if (!out.empty()) out += L'|';
+        out += path;
+    }
+    return out;
+}
+
+// WritePrivateProfileStringW schreibt in eine ANSI-Datei, wenn die INI nicht schon als UTF-16 (mit BOM) vorliegt; Pfade mit Zeichen ausserhalb der
+// Windows-Codepage (z.B. japanische Dateinamen) wuerden dann verstuemmelt. Daher: neue INI als UTF-16 anlegen, eine vorhandene ANSI-INI einmalig umwandeln.
+void EnsureUnicodeIni(const std::wstring& path)
+{
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    std::string bytes;
+    if (f != INVALID_HANDLE_VALUE) {
+        LARGE_INTEGER size{};
+        if (!GetFileSizeEx(f, &size) || size.QuadPart > 16 * 1024 * 1024) {
+            CloseHandle(f);
+            return;
+        }
+        bytes.resize(static_cast<size_t>(size.QuadPart));
+        DWORD got = 0;
+        const BOOL ok = bytes.empty() || ReadFile(f, &bytes[0], static_cast<DWORD>(bytes.size()), &got, nullptr);
+        CloseHandle(f);
+        if (!ok || got != bytes.size()) return;
+        if (bytes.size() >= 2 && static_cast<unsigned char>(bytes[0]) == 0xFF && static_cast<unsigned char>(bytes[1]) == 0xFE) return; // schon UTF-16
+    }
+    std::wstring text;
+    if (!bytes.empty()) {
+        const bool utf8Bom = bytes.size() >= 3 && static_cast<unsigned char>(bytes[0]) == 0xEF && static_cast<unsigned char>(bytes[1]) == 0xBB && static_cast<unsigned char>(bytes[2]) == 0xBF;
+        const char* src  = bytes.data() + (utf8Bom ? 3 : 0);
+        const int   len  = static_cast<int>(bytes.size() - (utf8Bom ? 3 : 0));
+        const UINT  cp   = utf8Bom ? CP_UTF8 : CP_ACP;
+        const int   n    = MultiByteToWideChar(cp, 0, src, len, nullptr, 0);
+        if (n <= 0) return;
+        text.resize(static_cast<size_t>(n));
+        MultiByteToWideChar(cp, 0, src, len, &text[0], n);
+    }
+    const std::wstring tmp = path + L".tmp";
+    HANDLE             o   = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (o == INVALID_HANDLE_VALUE) return;
+    const wchar_t bom = 0xFEFF;
+    DWORD         put = 0;
+    BOOL          ok  = WriteFile(o, &bom, sizeof(bom), &put, nullptr);
+    if (ok && !text.empty()) ok = WriteFile(o, text.data(), static_cast<DWORD>(text.size() * sizeof(wchar_t)), &put, nullptr);
+    CloseHandle(o);
+    if (!ok || !MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) DeleteFileW(tmp.c_str());
+}
 bool ValidBands(int n) { return n == 10 || n == 31 || n == 61; }
 
 std::wstring gainsText(const wchar_t* ini, const wchar_t* section, const wchar_t* key)
@@ -133,6 +189,26 @@ Settings LoadSettings(const std::wstring& iniPath, const wchar_t* section)
     s.soundShowKeys = GetPrivateProfileIntW(section, L"SoundShowKeys", s.soundShowKeys, p) != 0;
     s.soundPinned   = GetPrivateProfileIntW(section, L"SoundPinned", s.soundPinned, p) != 0;
     s.soundMonitor  = GetPrivateProfileIntW(section, L"SoundMonitor", s.soundMonitor, p) != 0;
+    // Datei-Player: Selbst hoeren, letzte Liste ([Playlist] Paths = Pfade mit '|'), benannte Listen ([Playlists] Count, Name<n>, Paths<n>)
+    s.fileMonitor = GetPrivateProfileIntW(section, L"FileMonitor", s.fileMonitor, p) != 0;
+    {
+        std::vector<wchar_t> big(kMaxIniLine);
+        GetPrivateProfileStringW(L"Playlist", L"Paths", L"", big.data(), static_cast<DWORD>(big.size()), p);
+        s.lastPlaylist = playlists::Split(big.data());
+        s.lastRepeat   = std::min(2, std::max(0, static_cast<int>(GetPrivateProfileIntW(L"Playlist", L"Repeat", 0, p))));
+        wchar_t cur[128] = {};
+        GetPrivateProfileStringW(L"Playlist", L"Name", L"", cur, 128, p);
+        s.playlistName = cur;
+        const int n = std::min<int>(static_cast<int>(playlists::kMaxLists), std::max<int>(0, GetPrivateProfileIntW(L"Playlists", L"Count", 0, p)));
+        for (int i = 1; i <= n; ++i) {
+            wchar_t key[32], name[128] = {};
+            swprintf(key, 32, L"Name%d", i);
+            GetPrivateProfileStringW(L"Playlists", key, L"", name, 128, p);
+            swprintf(key, 32, L"Paths%d", i);
+            GetPrivateProfileStringW(L"Playlists", key, L"", big.data(), static_cast<DWORD>(big.size()), p);
+            s.playlists.Save(name, playlists::Split(big.data()));
+        }
+    }
     {
         // Ein Schluessel je Knopf: Slot<n>=RRGGBB|Lautstaerke|Pfad|Name (Pfade enthalten kein '|', der Name steht zuletzt). SoundCount = hoechster belegter
         // Knopf, damit nicht alle 400 Schluessel abgefragt werden. Aeltere Versionen: SoundPath<n>/SoundName<n> (n <= 8).
@@ -172,6 +248,7 @@ Settings LoadSettings(const std::wstring& iniPath, const wchar_t* section)
 
 void SaveSettings(const std::wstring& iniPath, const Settings& s)
 {
+    EnsureUnicodeIni(iniPath);
     const wchar_t* p = iniPath.c_str();
     WritePrivateProfileStringW(kSection, L"Enabled", s.enabled ? L"1" : L"0", p);
     WritePrivateProfileStringW(kSection, L"MusicVolume", std::to_wstring(s.musicVolPct).c_str(), p);
@@ -238,6 +315,19 @@ void SaveSettings(const std::wstring& iniPath, const Settings& s)
     WritePrivateProfileStringW(kSection, L"SoundShowKeys", s.soundShowKeys ? L"1" : L"0", p);
     WritePrivateProfileStringW(kSection, L"SoundPinned", s.soundPinned ? L"1" : L"0", p);
     WritePrivateProfileStringW(kSection, L"SoundMonitor", s.soundMonitor ? L"1" : L"0", p);
+    WritePrivateProfileStringW(kSection, L"FileMonitor", s.fileMonitor ? L"1" : L"0", p);
+    WritePrivateProfileStringW(L"Playlist", L"Paths", JoinCapped(s.lastPlaylist).c_str(), p);
+    WritePrivateProfileStringW(L"Playlist", L"Repeat", std::to_wstring(s.lastRepeat).c_str(), p);
+    WritePrivateProfileStringW(L"Playlist", L"Name", s.playlistName.c_str(), p);
+    WritePrivateProfileStringW(L"Playlists", nullptr, nullptr, p); // Abschnitt leeren, damit geloeschte Listen verschwinden
+    WritePrivateProfileStringW(L"Playlists", L"Count", std::to_wstring(s.playlists.items.size()).c_str(), p);
+    for (size_t i = 0; i < s.playlists.items.size(); ++i) {
+        wchar_t key[32];
+        swprintf(key, 32, L"Name%zu", i + 1);
+        WritePrivateProfileStringW(L"Playlists", key, s.playlists.items[i].name.c_str(), p);
+        swprintf(key, 32, L"Paths%zu", i + 1);
+        WritePrivateProfileStringW(L"Playlists", key, JoinCapped(s.playlists.items[i].paths).c_str(), p);
+    }
     {
         WritePrivateProfileStringW(L"Sounds", nullptr, nullptr, p);
         int last = 0;

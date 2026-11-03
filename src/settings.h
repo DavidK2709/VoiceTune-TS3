@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "playlists.h"
 #include "presets.h"
 #include "profiles.h"
 
@@ -63,7 +64,14 @@ struct Settings {
     int       soundCols     = 4;
     bool      soundShowKeys = true; // Tastenkuerzel auf den Knoepfen anzeigen
     bool      soundPinned   = false; // Soundboard-Fenster immer im Vordergrund
-    bool      soundMonitor  = true;  // Selbst hoeren: Soundboard-Clips und Datei-Player zusaetzlich auf dem Windows-Standard-Ausgabegeraet
+    bool      soundMonitor  = true;  // Selbst hoeren: Soundboard-Clips zusaetzlich auf dem Windows-Standard-Ausgabegeraet
+
+    // Datei-Player
+    bool                      fileMonitor = true;  // Selbst hoeren: Datei-Player zusaetzlich auf dem Windows-Standard-Ausgabegeraet
+    std::vector<std::wstring> lastPlaylist;        // aktuelle Wiedergabeliste (wird beim Start wiederhergestellt, nicht abgespielt)
+    int                       lastRepeat = 0;      // RepeatMode: 0 aus, 1 alle, 2 eins
+    playlists::PlaylistBook   playlists;           // benannte Wiedergabelisten
+    std::wstring              playlistName;        // zuletzt gespeicherte/geladene Liste
 
     // Now-Playing: Titelwechsel im eigenen Chat melden (Standard), optional im Kanal-Chat (erreicht andere!) oder in den Client-Metadaten
     bool nowPlayingChat    = true;

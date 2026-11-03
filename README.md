@@ -38,7 +38,8 @@ Alles, was man einmal einstellt (Sprache, Senden, Profile verwalten, Hotkeys, Er
   Songtitel aktualisieren sich, die übrigen Kacheln rücken weich nach. Spielt eine App gerade Ton, zeigt die Kachel eine kleine animierte Audio-Spur (rein optisch, nicht der echte Pegel).
   Mausrad scrollt. **Rechtsklick auf eine App** blendet sie aus, **Rechtsklick ins Leere** → „Alle Apps einblenden“ (sind Apps ausgeblendet, steht das rechts in der Fußzeile). Die aktive Quelle lässt sich nicht ausblenden.
 - **Musik einspielen**: Hauptschalter, klein rechts in der Titelleiste der Karte „Audio-Quelle“ (auch im Plugin-Menü: *Musik einspielen: Ein/Aus*). Daneben steht der Status; das Schild oben rechts zeigt ihn als AKTIV/WARTET/AUS. Bei jedem Umschalten erscheint im Chat ein Banner mit Linie oben und unten:
-  **grün** „♪ MUSIK AN · Quelle“ bzw. **dunkelrot** „■ MUSIK AUS · Quelle“. Läuft gerade eine Datei, steht ihr Titel statt der App im Banner.
+  **grün** „♪ MUSIK AN · Quelle“ bzw. **dunkelrot** „■ MUSIK AUS · Quelle“ (Quelle = die gewählte App).
+  Der Schalter gilt **nur für die App**: Datei-Player und Soundboard laufen unabhängig davon und werden zur App dazugemischt.
   Sendet TeamSpeak die Musik trotz Musikmodus nicht, steht unter dem Schalter in **Orange**: „TS3 sendet die Musik nicht – Hilfe: Einstellungen → Erweitert“. Sonst zeigt die Zeile den normalen Status.
 - **Pegel**: zeigt live, was ins Mikrofon gemischt wird.
 - **Mithören**: spielt die eingespielte Musik zusätzlich in *deine* TeamSpeak-Ausgabe (Kopfhörer), damit du prüfen kannst, dass alles ankommt.
@@ -72,7 +73,12 @@ Alles, was man einmal einstellt (Sprache, Senden, Profile verwalten, Hotkeys, Er
 - Audio-Dateien **ins Fenster ziehen** (mehrere gleichzeitig, auch ganze Auswahlen) oder **„Dateien öffnen“**. Es entsteht eine Wiedergabeliste; Nicht-Audio-Dateien werden ignoriert, Duplikate nicht doppelt aufgenommen.
 - Bedienung: Zurück / Play-Pause / Stopp / Weiter, **Suchleiste** zum Springen (auch nach dem Ende der Liste), **Wiederholen** (Aus / Alle / Titel), **Liste leeren**, × an einer Zeile entfernt den Titel.
   Zurück springt bei mehr als 3 s Spielzeit zum Anfang des Titels. Titelwechsel sind nahtlos; eine defekte Datei wird mit Meldung übersprungen.
-- Die Dateien laufen durch dieselbe Kette wie App-Ton (Lautstärke, Equalizer, Optimierung, Mithören, Musikmodus). Solange eine Datei läuft, ersetzt sie die App-Quelle; der Hauptschalter *Musik einspielen* pausiert sie.
+- Die Dateien laufen durch dieselbe Kette wie App-Ton (Lautstärke, Equalizer, Optimierung, Mithören, Musikmodus) und werden **zur App dazugemischt** (App + Datei + Soundboard gleichzeitig).
+  Sie brauchen *Musik einspielen* nicht: Play schaltet den Hauptschalter nicht ein, und Ausschalten pausiert die Datei nicht. Eine pausierte Datei blockiert die App nicht.
+- **Selbst hören** (Schalter oben rechts, Standard: an): du hörst die Datei zusätzlich auf deinem Windows-Standard-Ausgabegerät. Ist *Mithören* an, hörst du sie stattdessen über TeamSpeak.
+- **Wiedergabelisten**: Die aktuelle Liste bleibt über einen Neustart erhalten (sie startet nicht von selbst). Im Kopf der Karte *Wiedergabeliste* wählst du gespeicherte Listen aus dem Dropdown (lädt sie, ersetzt die aktuelle);
+  **Speichern als …** sichert die aktuelle Liste (ist eine Liste gewählt, ist ihr Name vorbelegt: Enter aktualisiert sie), **Umbenennen** und **Löschen** (zweiter Klick zur Sicherheit) gelten für die gewählte. Bis zu 50 Listen à 500 Titel,
+  gespeichert in `voicetune.ini` (Abschnitte `[Playlist]` und `[Playlists]`). Per Stream Deck: `/cmd/playlist/<Name>`.
 - Formate: alles, was Windows (Media Foundation) dekodiert – mp3, wav, flac, m4a/aac, wma, in der Regel auch ogg/opus je nach installierten Windows-Codecs. Ist `ffmpeg.exe` im PATH oder neben der DLL, wird es als Reserve genutzt.
 
 Die Auswahl wird gespeichert; startet die App später neu, verbindet sich das Plugin automatisch wieder.
@@ -81,10 +87,13 @@ Bei Browsern wird der gesamte Browser-Ton aufgenommen (nicht nur ein Tab).
 ### Seite „Sounds“ (Soundboard) und Soundboard-Fenster
 - Ein **Raster aus frei belegbaren Knöpfen** wie bei RP Soundboard: oben stellst du **Zeilen** und **Spalten** (bis 20 × 20, höchstens 400 Knöpfe) mit − / + ein und ob die **Tastenkürzel auf den Knöpfen** angezeigt werden. Standard: 2 × 4. Passt das Raster nicht ins Fenster, scrollt es.
 - **Knopf anlegen:** einen leeren Knopf (nur ein „+“) anklicken oder eine Audio-Datei darauf ziehen (jedes Format der Dateien-Seite, Clips bis 30 s) – es öffnet sich der **Editor** mit *Name*, *Datei*, *Farbe*, *Lautstärke* (0–200 %, pro Knopf) und *Tastenkürzel*. Mehrere Dateien auf einmal füllen freie Knöpfe der Reihe nach (ohne Editor, Name = Dateiname).
-- **Klick** spielt den Clip über Musik und Mikrofon (bis zu 8 gleichzeitig; derselbe Clip startet von vorn). **Rechtsklick** öffnet den Editor (dort auch *Entfernen*). **Ziehen** eines Knopfes auf einen anderen tauscht bzw. verschiebt ihn. **Alle stoppen** beendet alles; der Regler **Lautstärke** unten gilt für alle Knöpfe zusätzlich.
+- **Klick** spielt den Clip über Musik und Mikrofon (bis zu 8 gleichzeitig; derselbe Clip startet von vorn). Während er läuft, zeigt der Knopf einen Fortschrittsbalken und „Position / Dauer“. **Rechtsklick** öffnet den Editor (dort auch *Entfernen*). **Ziehen** eines Knopfes auf einen anderen tauscht bzw. verschiebt ihn. **Alle stoppen** beendet alles; der Regler **Lautstärke** unten gilt für alle Knöpfe zusätzlich.
 - **Tastenkürzel:** die ersten 64 Knöpfe haben je einen TeamSpeak-Hotkey (*Sound 1 … 64*). Im Editor legst du ihn per **ändern …** fest (öffnet den Aufnahme-Dialog von TeamSpeak), auf dem Knopf steht er, wenn die Anzeige an ist. Alle Hotkeys findest du außerdem unter *Einstellungen → Hotkeys → Plugins → VoiceTune*.
 - **Abkoppeln:** der Knopf rechts oben (und *Plugins → VoiceTune → Soundboard öffnen* oder der Knopf auf der Seite *Quelle*) öffnet das Soundboard als **eigenes, frei skalierbares Fenster** – es bleibt offen, auch wenn du das Hauptfenster schließt. Dort gibt es zusätzlich den Schalter **Immer oben** (Fenster bleibt vor anderen Fenstern).
-- Clips funktionieren auch ohne Musikquelle und bei stummem Mikrofon; sie gehen durch Optimierung/Begrenzer und werden beim Mithören mitgehört. Beim ersten Abspielen schaltet sich „Musik einspielen“ bei Bedarf ein.
+- Clips funktionieren auch ohne Musikquelle und bei stummem Mikrofon; sie gehen durch Optimierung/Begrenzer und werden beim Mithören mitgehört. „Musik einspielen“ bleibt dabei, wie es ist.
+- **Selbst hören** (Schalter unten, Standard: an): du hörst die Clips zusätzlich auf deinem Windows-Standard-Ausgabegerät (bei *Mithören* stattdessen über TeamSpeak).
+- **Sofort statt Warteschlange:** Bist du in TeamSpeak stumm geschaltet, in einem Kanal ohne Sprechrecht oder nicht verbunden, ruft TeamSpeak das Plugin nicht auf. Clips und Dateien laufen dann trotzdem sofort
+  und nach der Uhr weiter (du hörst sie selbst); gesendet wird in dieser Zeit nichts, und es wird auch nichts später nachgeholt.
 - Ablage: Pfade, Namen, Farben und Lautstärken stehen in der INI (Abschnitt `[Sounds]`, ein Eintrag je Knopf). Die ersten 64 Clips werden beim Start geladen, die übrigen beim ersten Klick (kurze Verzögerung); bei sehr vielen Clips verwirft das Plugin die am längsten nicht gespielten (Speichergrenze 192 MB) und lädt sie beim nächsten Klick neu. Per Stream Deck: `/cmd/sound/<1-400>`.
 
 ### Reiter „Voicechanger“ (Entwicklung)
@@ -103,7 +112,7 @@ Das Zahnrad öffnet das Popup, ein zweiter Klick auf das Zahnrad, ein Klick nebe
   - **Musikmodus** (Standard: an, bitte eingeschaltet lassen): TeamSpeak ruft das Plugin *nach* seiner Vorverarbeitung auf. Die Sprachaktivierung startet daher nie von selbst eine Übertragung, nur weil
     das Plugin Musik einmischt: Die Musik käme erst durch, wenn du einmal sprichst. Solange Musik läuft, schaltet das Plugin deshalb – wie ein Soundboard-Plugin – auf **Dauersenden**:
     Sprachaktivierung aus, Mikrofon-Eingang aktiv (auch bei Push-to-Talk), Änderungen sofort an TS3 übergeben; das alles im Mikrofon-Callback. Dazu schaltet es
-    Rauschfilter und Auto-Pegel ab, weil sie Musik verschlechtern. 2,5 s nach dem Ende der Musik stellt es exakt deine bisherigen Werte wieder her (auch beim Beenden). Das Plugin-eigene **Mikro-Gate**
+    Rauschfilter und Auto-Pegel ab, weil sie Musik verschlechtern. Etwa 1 s nach dem Ende der Musik stellt es exakt deine bisherigen Werte wieder her (auch beim Beenden). Das Plugin-eigene **Mikro-Gate**
     (Schwelle −70…−25 dB, −70 = aus) hält währenddessen Tastatur- und Raumgeräusche vom Mikrofon fern. Voraussetzung ist „Musik immer senden“.
     Jeder „Test starten“ in den Aufnahme-Einstellungen läuft auf einer **eigenen, neuen Verbindung** (im TS3-Log `schid 2`, `3`, …; dein Server ist meist `schid 1`) mit eigener Vorverarbeitung:
     der Musikmodus folgt dem automatisch, setzt die alte Verbindung zurück und schaltet die neue um.
@@ -129,7 +138,7 @@ Befehle, Beispiele und Hinweise: [STREAMDECK-API.md](STREAMDECK-API.md).
 
 ### Tipps für guten Klang
 - Für Musik im Kanal-Codec **Opus Music** wählen; der Voice-Codec klingt für Musik schlecht und ist mono.
-- **Sprachaktivierung** schneidet leise Stellen ab; dafür hält das Plugin das Sende-Signal 600 ms nach. Bei Problemen auf *Dauersenden* umstellen.
+- **Sprachaktivierung** schneidet leise Stellen ab; dafür hält das Plugin das Sende-Signal 300 ms nach. Bei Problemen auf *Dauersenden* umstellen.
 - Der Audio-Puffer (≈ 60 ms) gleicht Jitter und Takt-Unterschiede zwischen App-Audio und Mikrofon aus; Aussetzer zeigt die Diagnosezeile.
 
 ## Testen ohne TeamSpeak

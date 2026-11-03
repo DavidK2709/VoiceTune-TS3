@@ -142,6 +142,45 @@ int main()
         CHECK(LoadSettings(ini).profiles.items.size() == 1, "nach Loeschen");
     }
 
+    // ---- Datei-Player: Selbst hoeren, letzte Liste, benannte Listen; Pfade ausserhalb der ANSI-Codepage (INI muss UTF-16 sein) --------------
+    {
+        CHECK(LoadSettings(ini + L".gibtsnicht").fileMonitor && LoadSettings(ini + L".gibtsnicht").lastPlaylist.empty(), "Standard: Dateien selbst hoeren an, keine Liste");
+        Settings t;
+        t.fileMonitor  = false;
+        t.lastPlaylist = {L"C:\\Musik\\日本語の曲.mp3", L"D:\\Töne\\Ärger.flac", L"E:\\x y\\z.wav"};
+        t.lastRepeat   = 2;
+        t.playlistName = L"Party";
+        t.playlists.Save(L"Party", t.lastPlaylist);
+        t.playlists.Save(L"Ruhig", {L"F:\\leise.mp3"});
+        t.playlists.Save(L"Leer", {});
+        SaveSettings(ini, t);
+        const Settings u = LoadSettings(ini);
+        CHECK(!u.fileMonitor && u.lastRepeat == 2 && u.playlistName == L"Party", "Schalter, Wiederholen, gewaehlte Liste");
+        CHECK(u.lastPlaylist == t.lastPlaylist, "letzte Liste (%zu Pfade, inkl. Japanisch)", u.lastPlaylist.size());
+        CHECK(u.playlists.items.size() == 3 && u.playlists.Find(L"Party") && u.playlists.Find(L"Party")->paths == t.lastPlaylist && u.playlists.Find(L"Ruhig")->paths.size() == 1 &&
+                  u.playlists.Find(L"Leer") && u.playlists.Find(L"Leer")->paths.empty(),
+              "benannte Listen: %zu", u.playlists.items.size());
+        t.playlists.Delete(L"Ruhig");
+        t.lastPlaylist.clear();
+        SaveSettings(ini, t);
+        const Settings v = LoadSettings(ini);
+        CHECK(v.playlists.items.size() == 2 && !v.playlists.Find(L"Ruhig") && v.lastPlaylist.empty(), "nach Loeschen / Leeren");
+
+        // Eine alte ANSI-INI wird beim Speichern nach UTF-16 umgewandelt, ohne Werte zu verlieren
+        DeleteFileW(ini.c_str());
+        const char ansi[] = "[VoiceTune]\r\nTargetExe=spotify.exe\r\nMusicVolume=77\r\n";
+        HANDLE     f      = CreateFileW(ini.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        DWORD      put    = 0;
+        WriteFile(f, ansi, sizeof(ansi) - 1, &put, nullptr);
+        CloseHandle(f);
+        Settings w = LoadSettings(ini);
+        CHECK(w.targetExe == L"spotify.exe" && w.musicVolPct == 77, "ANSI-INI gelesen");
+        w.lastPlaylist = {L"C:\\Musik\\日本語.mp3"};
+        SaveSettings(ini, w);
+        const Settings x = LoadSettings(ini);
+        CHECK(x.targetExe == L"spotify.exe" && x.musicVolPct == 77 && x.lastPlaylist.size() == 1 && x.lastPlaylist[0] == L"C:\\Musik\\日本語.mp3", "nach Umwandlung nach UTF-16");
+    }
+
     DeleteFileW(ini.c_str());
     std::printf(g_fail ? "%d FEHLER\n" : "settings_test: alle Tests ok\n", g_fail);
     return g_fail ? 1 : 0;
