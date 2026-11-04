@@ -58,7 +58,8 @@ void Engine::Init(const std::wstring& configDir)
     } else {
         settings_ = LoadSettings(iniPath_);
     }
-    if (migrated) SaveSettings(iniPath_, settings_);
+    const bool newIds = EnsureSoundIds(settings_.sounds); // aeltere INI: Knoepfe bekommen einmalig ihre feste ID
+    if (migrated || newIds) SaveSettings(iniPath_, settings_);
     musicGain_ = settings_.musicVolPct / 100.0f;
     micGain_   = settings_.micVolPct / 100.0f;
     alwaysSend_ = settings_.alwaysSend;
@@ -1311,6 +1312,7 @@ void Engine::SoundSetSlot(int slot, const std::wstring& path)
         b.volPct = 100;
         sounds_.SetVolume(slot, 100);
     }
+    EnsureSoundIds(settings_.sounds);
     SaveLocked();
 }
 
@@ -1328,6 +1330,7 @@ void Engine::SoundConfigure(int slot, const std::wstring& path, const std::wstri
         b.name               = path.empty() ? L"" : (n.empty() ? FileTitle(path) : n);
         b.color              = path.empty() ? 0 : (color & 0xFFFFFF);
         b.volPct             = path.empty() ? 100 : volPct;
+        EnsureSoundIds(settings_.sounds);
         SaveLocked();
     }
     sounds_.SetVolume(slot, path.empty() ? 100 : volPct);
@@ -1398,6 +1401,20 @@ void Engine::SoundPreview(int slot)
     if (wake_) SetEvent(wake_);
 }
 
+bool Engine::SoundPlayId(const std::wstring& id)
+{
+    if (id.empty()) return false;
+    int slot = -1;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        for (int i = 0; i < kSoundSlots && slot < 0; ++i)
+            if (settings_.sounds[i].id == id) slot = i;
+    }
+    if (slot < 0) return false;
+    SoundPlay(slot);
+    return true;
+}
+
 void Engine::SoundPreviewStop() { sounds_.PreviewStop(); }
 
 bool Engine::SoundImport(const std::vector<SoundSlot>& slots, int rows, int cols)
@@ -1407,6 +1424,7 @@ bool Engine::SoundImport(const std::vector<SoundSlot>& slots, int rows, int cols
     while (rows * cols > kSoundSlots) (rows > cols ? rows : cols)--;
     std::vector<SoundSlot> fresh(kSoundSlots);
     for (size_t i = 0; i < slots.size() && i < fresh.size(); ++i) fresh[i] = slots[i];
+    EnsureSoundIds(fresh); // IDs aus der Datei bleiben, Dateien ohne ID (aeltere Exporte, fremde Boards) bekommen neue
     {
         std::lock_guard<std::mutex> lk(mutex_);
         settings_.sounds    = fresh;
@@ -1645,6 +1663,7 @@ Engine::SoundInfo Engine::GetSound(int slot)
         const SoundSlot& b = settings_.sounds[slot];
         out.name           = b.name;
         out.path           = b.path;
+        out.id             = b.id;
         out.color          = b.color;
         out.volPct         = b.volPct;
     }

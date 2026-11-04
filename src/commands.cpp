@@ -129,6 +129,9 @@ bool RunCommand(const std::string& name, const std::string& arg)
         if (!ParseInt(arg, 1, kSoundSlots, &n)) return false;
         e.SoundPlay(n - 1);
     }
+    else if (name == "soundid") {
+        if (!e.SoundPlayId(Utf8ToWide(arg))) return false;
+    }
     else if (name == "soundstop") e.SoundStop();
     else if (name == "profilenum") {
         if (!ParseInt(arg, 1, kProfileHotkeys, &n)) return false;

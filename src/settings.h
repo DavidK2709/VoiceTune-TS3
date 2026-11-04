@@ -20,6 +20,8 @@
 #pragma once
 #include <cstdint>
 #include <climits>
+#include <random>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -39,7 +41,43 @@ struct SoundSlot {
     std::wstring name;          // Anzeigename (Standard: Dateiname ohne Endung)
     uint32_t     color = 0;     // 0xRRGGBB, 0 = Standardfarbe
     int          volPct = 100;  // Lautstaerke dieses Knopfes, 0..200
+    std::wstring id;            // Feste Knopf-ID (siehe EnsureSoundIds). Wandert beim Verschieben mit und bleibt auch beim Leeren erhalten: Stream-Deck-Tasten haengen daran, nicht am Platz.
 };
+
+// Gueltige Knopf-ID: 8 Hex-Zeichen in Kleinschreibung
+inline bool IsSoundId(const std::wstring& id)
+{
+    if (id.size() != 8) return false;
+    for (wchar_t c : id)
+        if (!((c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f'))) return false;
+    return true;
+}
+
+// Ungueltige und doppelte IDs entfernen (bei Doppelten behaelt der erste Knopf die ID), belegte Knoepfe ohne ID bekommen eine neue. Zufaellig statt hochgezaehlt, damit IDs aus
+// verschiedenen Boards nicht zusammenfallen. Rueckgabe: true = etwas wurde geaendert (also speichern).
+inline bool EnsureSoundIds(std::vector<SoundSlot>& slots)
+{
+    bool                   changed = false;
+    std::set<std::wstring> seen;
+    for (auto& b : slots) {
+        if (b.id.empty()) continue;
+        if (!IsSoundId(b.id) || !seen.insert(b.id).second) {
+            b.id.clear();
+            changed = true;
+        }
+    }
+    std::random_device rd;
+    for (auto& b : slots) {
+        if (b.path.empty() || !b.id.empty()) continue;
+        do {
+            const uint32_t v = rd();
+            b.id.assign(8, L'0');
+            for (int i = 0; i < 8; ++i) b.id[i] = L"0123456789abcdef"[(v >> (28 - 4 * i)) & 0xF];
+        } while (!seen.insert(b.id).second);
+        changed = true;
+    }
+    return changed;
+}
 
 struct Settings {
     bool         enabled     = false; // Musik einspielen

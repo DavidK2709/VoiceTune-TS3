@@ -96,7 +96,7 @@ Bei Browsern wird der gesamte Browser-Ton aufgenommen (nicht nur ein Tab).
 - **Selbst hören** (Schalter unten, Standard: an): du hörst die Clips zusätzlich auf deinem Windows-Standard-Ausgabegerät (bei *Mithören* stattdessen über TeamSpeak).
 - **Sofort statt Warteschlange:** Bist du in TeamSpeak stumm geschaltet, in einem Kanal ohne Sprechrecht oder nicht verbunden, ruft TeamSpeak das Plugin nicht auf. Clips und Dateien laufen dann trotzdem sofort
   und nach der Uhr weiter (du hörst sie selbst); gesendet wird in dieser Zeit nichts, und es wird auch nichts später nachgeholt.
-- Ablage: Pfade, Namen, Farben und Lautstärken stehen in der INI (Abschnitt `[Sounds]`, ein Eintrag je Knopf). Die ersten 64 Clips werden beim Start geladen, die übrigen beim ersten Klick (kurze Verzögerung); bei sehr vielen Clips verwirft das Plugin die am längsten nicht gespielten (Speichergrenze 192 MB) und lädt sie beim nächsten Klick neu. Per Stream Deck: `/cmd/sound/<1-400>`.
+- Ablage: Pfade, Namen, Farben und Lautstärken stehen in der INI (Abschnitt `[Sounds]`, ein Eintrag je Knopf). Die ersten 64 Clips werden beim Start geladen, die übrigen beim ersten Klick (kurze Verzögerung); bei sehr vielen Clips verwirft das Plugin die am längsten nicht gespielten (Speichergrenze 192 MB) und lädt sie beim nächsten Klick neu. Per Stream Deck: `/cmd/soundid/<id>` über die feste Knopf-ID, die auch beim Verschieben gleich bleibt (oder `/cmd/sound/<1-400>` über den Platz).
 
 ### Mini-Fenster und Tray-Symbol
 - **Mini-Fenster** (Symbol links neben dem Zahnrad oder *Plugins → VoiceTune → Mini-Fenster öffnen*): ein kleines, rahmenloses Fenster, das immer im Vordergrund bleibt – mit Quelle, Musik-Lautstärke, Mikrofon-stumm-Knopf und „Musik einspielen“. Am Hintergrund ziehen verschiebt es, die Position wird gemerkt, Esc oder × schließt.
@@ -178,6 +178,7 @@ build\mixer_test.exe                               # Mixer / Ring-Buffer
 build\eq_test.exe                                  # Equalizer (10/31/61 Bänder), FFT, Tonspur-Puffer
 build\settings_test.exe                            # INI-Roundtrip (Einstellungen, eigene Presets, Profile, Sounds)
 build\commands_test.exe                            # gemeinsame Befehle (Hotkeys, Stream-Deck-API)
+build\remote_test.exe                              # Stream-Deck-Schnittstelle ueber echtes HTTP (Port 19471): /sounds, /state, feste Knopf-IDs
 build\soundboard_test.exe build\pt                # Soundboard (Mischen, Stimmen, Laden aus Dateien, Angleichen, Vorhören)
 build\logic_test.exe                               # Ducking, Sprach-Erkennung, Lautheit, Soundboard-Datei (.vtboard), Update-Vergleich
 build\nowplaying_test.exe                          # Titelbereinigung für „Titel melden“

@@ -465,8 +465,8 @@ int main(int argc, char** argv)
 
         // Board importieren: ein Speichervorgang, Raster und Knoepfe ersetzt
         std::vector<SoundSlot> imp(kSoundSlots);
-        imp[0]  = {wav, L"Eins", 0xC0392B, 150};
-        imp[70] = {mp3, L"Siebzig", 0, 100};
+        imp[0]  = {wav, L"Eins", 0xC0392B, 150, L""};
+        imp[70] = {mp3, L"Siebzig", 0, 100, L""};
         CHECK(en.SoundImport(imp, 3, 5), "Import");
         const Settings is = en.GetSettings();
         CHECK(is.soundRows == 3 && is.soundCols == 5 && is.sounds[0].name == L"Eins" && is.sounds[0].color == 0xC0392B && is.sounds[0].volPct == 150 && is.sounds[70].path == mp3 &&
@@ -474,6 +474,16 @@ int main(int argc, char** argv)
               "Board ersetzt");
         for (int i = 0; i < 400 && en.GetSound(0).state != Soundboard::State::Ready; ++i) Sleep(20);
         CHECK(en.GetSound(0).state == Soundboard::State::Ready && en.GetSound(70).state == Soundboard::State::Unloaded, "Knopf 1 geladen, Knopf 71 erst beim Klick");
+
+        // Feste Knopf-ID: nach dem Verschieben spielt dieselbe ID den Clip am neuen Platz
+        const std::wstring movedId = en.GetSound(0).id;
+        en.SoundSwap(0, 1);
+        for (int i = 0; i < 400 && en.GetSound(1).state != Soundboard::State::Ready; ++i) Sleep(20);
+        CHECK(en.SoundPlayId(movedId), "Abspielen ueber die ID");
+        RunFor(300);
+        CHECK(en.GetSound(1).position >= 0 && en.GetSound(0).position < 0, "es spielt der neue Platz (%.2f / %.2f)", en.GetSound(1).position, en.GetSound(0).position);
+        en.SoundStop();
+        RunFor(100);
         CHECK(en.SoundImport(std::vector<SoundSlot>(), 99, 99) && en.GetSettings().soundRows * en.GetSettings().soundCols <= kSoundSlots && en.GetSound(0).path.empty(), "leeres Board, Raster begrenzt");
         en.SetSoundGrid(2, 4);
 

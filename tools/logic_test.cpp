@@ -122,9 +122,9 @@ int main()
         board::Data d;
         d.rows = 3;
         d.cols = 5;
-        d.slots[0]   = {L"C:\\Sounds\\hupe.wav", L"Hupe | laut", 0xC0392B, 150};
-        d.slots[7]   = {L"C:\\Töne\\Ärger.mp3", L"Ärger", 0, 100};
-        d.slots[399] = {L"D:\\x.wav", L"Letzter", 0x00FF7F, 20};
+        d.slots[0]   = {L"C:\\Sounds\\hupe.wav", L"Hupe | laut", 0xC0392B, 150, L""};
+        d.slots[7]   = {L"C:\\Töne\\Ärger.mp3", L"Ärger", 0, 100, L""};
+        d.slots[399] = {L"D:\\x.wav", L"Letzter", 0x00FF7F, 20, L""};
         const std::string text = board::FormatBoard(d, L"C:\\Boards");
         CHECK(text.find("..\\Sounds\\hupe.wav") != std::string::npos && text.find("Slot400=00FF7F|20|D:\\x.wav|Letzter") != std::string::npos, "Text:\n%s", text.c_str());
         board::Data back;
@@ -145,6 +145,39 @@ int main()
         // UTF-8-BOM am Anfang
         board::Data bom;
         CHECK(board::ParseBoard(std::string("\xEF\xBB\xBF[VoiceTuneBoard]\r\nRows=1\r\nCols=2\r\n"), L"C:\\", &bom) && bom.cols == 2, "BOM");
+
+        // Feste Knopf-IDs: Datei-Roundtrip (auch fuer geleerte Knoepfe), aeltere Dateien ohne IDs
+        board::Data withIds;
+        withIds.slots[0]    = {L"C:\\a.wav", L"A", 0, 100, L"a3f19c02"};
+        withIds.slots[5].id = L"0000beef"; // geleert
+        board::Data idsBack;
+        CHECK(board::ParseBoard(board::FormatBoard(withIds, L"C:\\"), L"C:\\", &idsBack), "Board mit IDs");
+        CHECK(idsBack.slots[0].id == L"a3f19c02" && idsBack.slots[0].path == L"C:\\a.wav" && idsBack.slots[5].id == L"0000beef" && idsBack.slots[5].path.empty() && idsBack.slots[1].id.empty(), "IDs ueberstehen den Roundtrip");
+        CHECK(back.slots[0].id.empty(), "Datei ohne IDs: keine ID");
+        CHECK(board::ParseBoard("[VoiceTuneBoard]\r\nSlotId0=a3f19c02\r\nSlotId401=a3f19c02\r\nSlotIdx=a3f19c02\r\n", L"C:\\", &junk), "SlotId ausserhalb des Bereichs wird ignoriert");
+        CHECK(junk.slots[0].id.empty() && junk.slots[399].id.empty(), "ungueltige SlotId-Zeilen");
+
+        // EnsureSoundIds: belegte Knoepfe bekommen eine ID, vorhandene bleiben, Unsinn und Doppelte fliegen raus
+        CHECK(IsSoundId(L"a3f19c02") && !IsSoundId(L"") && !IsSoundId(L"A3F19C02") && !IsSoundId(L"a3f19c0") && !IsSoundId(L"a3f19c023") && !IsSoundId(L"a3f19c0g") && !IsSoundId(L"../x/y/"), "IsSoundId");
+        std::vector<SoundSlot> ids(kSoundSlots);
+        for (int i = 0; i < kSoundSlots; ++i) ids[i].path = L"C:\\x.wav";
+        ids[0].id  = L"a3f19c02";
+        ids[1].id  = L"a3f19c02"; // doppelt
+        ids[2].id  = L"KAPUTT";
+        ids[3].id  = L"0000beef"; // bleibt
+        ids[4].path.clear();
+        ids[4].id = L"00c0ffee"; // geleert: bleibt
+        ids[5].path.clear();     // leer und nie belegt: bekommt keine
+        CHECK(EnsureSoundIds(ids), "es wurde etwas geaendert");
+        CHECK(ids[0].id == L"a3f19c02" && ids[3].id == L"0000beef" && ids[4].id == L"00c0ffee" && ids[5].id.empty(), "gueltige IDs bleiben, leere Knoepfe bekommen keine");
+        std::set<std::wstring> distinct;
+        for (const auto& b : ids)
+            if (!b.id.empty()) {
+                CHECK(IsSoundId(b.id), "ungueltige ID %ls", b.id.c_str());
+                distinct.insert(b.id);
+            }
+        CHECK(distinct.size() == kSoundSlots - 1, "alle IDs verschieden: %zu", distinct.size());
+        CHECK(!EnsureSoundIds(ids), "zweiter Lauf aendert nichts");
     }
 
     // ---- Update-Logik ----

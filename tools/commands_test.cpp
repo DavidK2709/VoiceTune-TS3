@@ -127,6 +127,47 @@ int main()
     CHECK(RunCommandPath("sound/1") && RunCommandPath("sound/400") && !RunCommandPath("sound/0") && !RunCommandPath("sound/401") && !RunCommandPath("sound/x") && !RunCommandPath("sound"), "sound-Argumente");
     CHECK(RunCommand("soundstop"), "soundstop");
 
+    // Feste Knopf-IDs: bleiben beim Knopf, egal was mit ihm passiert (die Dateien gibt es nicht, geprueft wird nur die Zuordnung)
+    {
+        const auto idCmd = [](const std::wstring& id) { return "soundid/" + std::string(id.begin(), id.end()); };
+        CHECK(en.GetSound(0).id.empty(), "nie belegter Knopf hat keine ID");
+        en.SoundSetSlot(0, L"C:\\gibtsnicht\\a.wav");
+        en.SoundSetSlot(1, L"C:\\gibtsnicht\\b.wav");
+        const std::wstring idA = en.GetSound(0).id, idB = en.GetSound(1).id;
+        CHECK(IsSoundId(idA) && IsSoundId(idB) && idA != idB, "IDs vergeben: %ls, %ls", idA.c_str(), idB.c_str());
+        CHECK(RunCommandPath(idCmd(idA)), "soundid/<id>");
+        CHECK(!RunCommandPath("soundid/ffffffff") && !RunCommandPath("soundid/") && !RunCommandPath("soundid"), "unbekannte ID");
+
+        en.SoundSwap(0, 5); // auf ein leeres Feld
+        CHECK(en.GetSound(5).id == idA && en.GetSound(0).id.empty(), "Verschieben nimmt die ID mit");
+        en.SoundSwap(5, 1); // zwei belegte tauschen
+        CHECK(en.GetSound(1).id == idA && en.GetSound(5).id == idB, "Tauschen nimmt beide IDs mit");
+
+        en.SoundRename(1, L"Neu");
+        en.SoundConfigure(1, L"C:\\gibtsnicht\\c.wav", L"Neu", 0x112233, 50);
+        CHECK(en.GetSound(1).id == idA && en.GetSound(1).path == L"C:\\gibtsnicht\\c.wav", "andere Datei und Einstellungen: ID bleibt");
+        en.SetSoundGrid(1, 3);
+        CHECK(en.GetSound(5).id == idB && RunCommandPath(idCmd(idB)), "ausgeblendeter Knopf bleibt erreichbar");
+        en.SetSoundGrid(2, 4);
+
+        en.SoundSetSlot(1, L"");
+        CHECK(en.GetSound(1).id == idA && en.GetSound(1).path.empty() && RunCommandPath(idCmd(idA)), "geleerter Knopf behaelt die ID");
+        en.SoundSetSlot(1, L"C:\\gibtsnicht\\d.wav");
+        CHECK(en.GetSound(1).id == idA, "neu belegter Knopf hat wieder dieselbe ID");
+        en.SoundConfigure(1, L"", L"", 0, 100);
+        CHECK(en.GetSound(1).id == idA && en.GetSound(1).path.empty(), "Leeren im Editor behaelt die ID");
+        en.SoundSetSlot(1, L"C:\\gibtsnicht\\d.wav");
+
+        en.SoundImport(en.GetSettings().sounds, 2, 4);
+        CHECK(en.GetSound(1).id == idA && en.GetSound(5).id == idB, "Import mit IDs behaelt sie");
+        std::vector<SoundSlot> legacy(kSoundSlots);
+        legacy[1] = {L"C:\\gibtsnicht\\e.wav", L"Alt", 0, 100, L""};
+        en.SoundImport(legacy, 2, 4);
+        CHECK(IsSoundId(en.GetSound(1).id) && en.GetSound(1).id != idA && !RunCommandPath(idCmd(idA)) && !RunCommandPath(idCmd(idB)), "Import ohne IDs: neue IDs, alte unbekannt");
+
+        CHECK(en.SoundImport(std::vector<SoundSlot>(), 2, 4) && en.GetSound(1).id.empty(), "Board leeren"); // die Hotkey-Tests unten erwarten leere Knoepfe
+    }
+
     // Datei-Player ohne Titel: darf nichts kaputt machen
     CHECK(RunCommand("playpause") && RunCommand("next") && RunCommand("prev") && RunCommand("stop"), "Player-Befehle ohne Liste");
 
