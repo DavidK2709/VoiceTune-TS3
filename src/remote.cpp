@@ -63,14 +63,38 @@ std::string JsonStrArray(const std::vector<std::wstring>& v) {
     return o + "]";
 }
 
+bool SoundReady(const Engine::SoundInfo& s) {
+    return s.state == Soundboard::State::Ready || s.state == Soundboard::State::Unloaded || s.state == Soundboard::State::Loading;
+}
+
+// Pruefsumme (FNV-1a) ueber alles, was /sounds liefert: Aendert sie sich, muss ein Client die Liste neu holen. Berechnet statt mitgezaehlt, so entgeht ihr keine Aenderung
+// (Umsortieren, Import, Profilwechsel mit anderem Raster, fehlgeschlagenes Laden).
+uint32_t SoundsRev(const std::vector<Engine::SoundInfo>& all, const Settings& s) {
+    uint32_t h   = 2166136261u;
+    auto     add = [&h](uint32_t v) { h = (h ^ v) * 16777619u; };
+    add(static_cast<uint32_t>(s.soundRows));
+    add(static_cast<uint32_t>(s.soundCols));
+    for (const auto& b : all) {
+        for (wchar_t c : b.id) add(static_cast<uint32_t>(c));
+        add(0);
+        for (wchar_t c : b.name) add(static_cast<uint32_t>(c));
+        add(0);
+        add(b.color);
+        add(b.path.empty() ? 0u : 1u);
+        add(SoundReady(b) ? 1u : 0u);
+    }
+    return h;
+}
+
 // Zusatzfelder von /state (additiv): laufende Sounds, Profil-Position, Datei-Player-Fortschritt, Ducking
 std::string StateExtraJson(Engine& e, const Settings& s, const PlayerSnapshot& p) {
-    std::string    sounds;
+    std::string    sounds, soundIds;
     int            playing = 0;
     const auto     all     = e.GetSounds();
     for (size_t i = 0; i < all.size(); ++i)
         if (all[i].position >= 0) {
             sounds += std::string(playing ? "," : "") + std::to_string(i + 1);
+            soundIds += std::string(playing ? ",\"" : "\"") + JsonEsc(WideToUtf8(all[i].id)) + "\"";
             ++playing;
         }
     const auto names = e.ProfileNames();
@@ -82,6 +106,7 @@ std::string StateExtraJson(Engine& e, const Settings& s, const PlayerSnapshot& p
     char pos[96];
     std::snprintf(pos, sizeof(pos), "\"position\":%.1f,\"duration\":%.1f", p.position, p.duration);
     return ",\"soundPlaying\":" + std::string(playing > 0 ? "true" : "false") + ",\"soundsActive\":[" + sounds + "]" +
+           ",\"soundsActiveIds\":[" + soundIds + "],\"soundsRev\":" + std::to_string(SoundsRev(all, s)) +
            ",\"profileIndex\":" + std::to_string(index) + ",\"profileCount\":" + std::to_string(names.size()) +
            ",\"file\":{\"title\":\"" + JsonEsc(title) + "\"," + pos + "}" +
            ",\"ducking\":" + (e.DuckGain() < 0.95f ? "true" : "false") +
@@ -126,13 +151,15 @@ std::string PlaylistsJson() {
 std::string SoundsJson() {
     const auto  sounds = Engine::Get().GetSounds();
     const auto  st     = Engine::Get().GetSettings();
-    size_t      count  = 8; // wie bisher mindestens die ersten 8 Knoepfe, danach bis zum letzten belegten
+    size_t      count  = 8; // wie bisher mindestens die ersten 8 Knoepfe, danach bis zum letzten mit Inhalt oder ID (auch ein geleerter Knopf muss fuer eine Taste auffindbar bleiben)
     for (size_t i = 0; i < sounds.size(); ++i)
-        if (!sounds[i].path.empty()) count = std::max(count, i + 1);
+        if (!sounds[i].path.empty() || !sounds[i].id.empty()) count = std::max(count, i + 1);
     std::string o = "{\"sounds\":[";
     for (size_t i = 0; i < count; ++i) {
-        const bool ready = sounds[i].state == Soundboard::State::Ready || sounds[i].state == Soundboard::State::Unloaded || sounds[i].state == Soundboard::State::Loading;
-        o += std::string(i ? "," : "") + "{\"slot\":" + std::to_string(i + 1) + ",\"name\":\"" + JsonEsc(WideToUtf8(sounds[i].name)) + "\",\"ready\":" + (ready ? "true" : "false") + "}";
+        char color[8] = "";
+        if (sounds[i].color) std::snprintf(color, sizeof(color), "%06X", static_cast<unsigned>(sounds[i].color & 0xFFFFFF));
+        o += std::string(i ? "," : "") + "{\"slot\":" + std::to_string(i + 1) + ",\"id\":\"" + JsonEsc(WideToUtf8(sounds[i].id)) + "\",\"used\":" + (sounds[i].path.empty() ? "false" : "true") +
+             ",\"name\":\"" + JsonEsc(WideToUtf8(sounds[i].name)) + "\",\"color\":\"" + color + "\",\"ready\":" + (SoundReady(sounds[i]) ? "true" : "false") + "}";
     }
     return o + "],\"rows\":" + std::to_string(st.soundRows) + ",\"cols\":" + std::to_string(st.soundCols) + "}";
 }

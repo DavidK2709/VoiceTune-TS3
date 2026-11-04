@@ -112,9 +112,9 @@ int main()
                   t.profiles.NextAfter(L"unbekannt") == L"Stream 'Abend'", "Vorschlag und Reihum");
         t.profileName = L"Zocken";
         t.soundVolPct = 150;
-        t.sounds[0] = {L"C:\\Sounds\\airhorn.wav", L"Hupe", 0xC0392B, 150};
-        t.sounds[7] = {L"D:\\Töne\\Ärger.mp3", L"Ärger | Mix", 0, 100};
-        t.sounds[399] = {L"E:\\x.wav", L"Letzter", 0x00FF7F, 20};
+        t.sounds[0] = {L"C:\\Sounds\\airhorn.wav", L"Hupe", 0xC0392B, 150, L""};
+        t.sounds[7] = {L"D:\\Töne\\Ärger.mp3", L"Ärger | Mix", 0, 100, L""};
+        t.sounds[399] = {L"E:\\x.wav", L"Letzter", 0x00FF7F, 20, L""};
         t.soundRows     = 18;
         t.soundCols     = 17;
         t.soundShowKeys = false;
@@ -149,6 +149,21 @@ int main()
         // Standardwerte einer leeren INI
         const Settings d = LoadSettings(ini + L".gibtsnicht");
         CHECK(d.nowPlayingChat && !d.nowPlayingChannel && !d.nowPlayingMeta && d.language == 0 && d.soundVolPct == 100 && d.soundRows == 2 && d.soundCols == 4 && d.soundShowKeys && !d.soundPinned && d.soundMonitor && d.profiles.items.empty() && !d.advancedOpen, "Standardwerte (Erweitert zu)");
+
+        // Feste Knopf-IDs: auch die eines geleerten Knopfes hinter dem letzten belegten muss erhalten bleiben
+        {
+            const std::wstring idIni = ini + L".ids";
+            DeleteFileW(idIni.c_str());
+            Settings a;
+            a.sounds[2]    = {L"C:\\a.wav", L"A", 0, 100, L"a3f19c02"};
+            a.sounds[9].id = L"0000beef"; // geleert
+            SaveSettings(idIni, a);
+            const Settings b = LoadSettings(idIni);
+            CHECK(b.sounds[2].id == L"a3f19c02" && b.sounds[2].path == L"C:\\a.wav" && b.sounds[2].name == L"A", "ID eines belegten Knopfes");
+            CHECK(b.sounds[9].id == L"0000beef" && b.sounds[9].path.empty() && b.sounds[0].id.empty(), "ID eines geleerten Knopfes");
+            DeleteFileW(idIni.c_str());
+            CHECK(u.sounds[0].id.empty() && u.sounds[0].path == L"C:\\Sounds\\airhorn.wav", "aeltere Knoepfe ohne ID");
+        }
 
         // Obergrenze der Profile
         profiles::ProfileBook many;

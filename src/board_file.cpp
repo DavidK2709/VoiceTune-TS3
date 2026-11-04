@@ -110,6 +110,7 @@ std::string FormatBoard(const Data& d, const std::wstring& fileDir)
     std::string out = "[VoiceTuneBoard]\r\nVersion=1\r\nRows=" + std::to_string(d.rows) + "\r\nCols=" + std::to_string(d.cols) + "\r\n";
     for (size_t i = 0; i < d.slots.size(); ++i) {
         const SoundSlot& s = d.slots[i];
+        if (!s.id.empty()) out += "SlotId" + std::to_string(i + 1) + "=" + ToUtf8(s.id) + "\r\n"; // eigene Zeile: aeltere Versionen ueberspringen sie
         if (s.path.empty()) continue;
         char head[40];
         std::snprintf(head, sizeof(head), "%06X|%d|", static_cast<unsigned>(s.color & 0xFFFFFF), s.volPct);
@@ -138,6 +139,10 @@ bool ParseBoard(const std::string& utf8, const std::wstring& fileDir, Data* out)
         const std::string key = line.substr(0, eq), val = line.substr(eq + 1);
         if (key == "Rows") d.rows = std::min(kSoundMaxRows, std::max(1, std::atoi(val.c_str())));
         else if (key == "Cols") d.cols = std::min(kSoundMaxCols, std::max(1, std::atoi(val.c_str())));
+        else if (key.rfind("SlotId", 0) == 0) {
+            const int idx = std::atoi(key.c_str() + 6);
+            if (idx >= 1 && idx <= kSoundSlots) d.slots[idx - 1].id = FromUtf8(val); // geprueft wird beim Import (EnsureSoundIds)
+        }
         else if (key.rfind("Slot", 0) == 0) {
             const int idx = std::atoi(key.c_str() + 4);
             if (idx < 1 || idx > kSoundSlots) continue;

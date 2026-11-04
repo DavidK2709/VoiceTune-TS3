@@ -9,7 +9,7 @@ Von einer App wird nur deren Ton aufgenommen, also keine TeamSpeak-Stimmen und k
 **Stream Deck:** Das passende Plugin gibt es hier: [VoiceTune-TS3-Streamdeck-API](https://github.com/DavidK2709/VoiceTune-TS3-Streamdeck-API)
 
 
-Autoren: David K. X ´Tony S.
+Autoren: Dave Swift X Michael Schulz
 
 ## Voraussetzungen
 

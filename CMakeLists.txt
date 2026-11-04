@@ -117,6 +117,11 @@ add_executable(commands_test tools/commands_test.cpp src/commands.cpp src/engine
 target_include_directories(commands_test PRIVATE src)
 target_link_libraries(commands_test PRIVATE ole32 oleaut32 uuid user32 winmm mfuuid ${OPUS_LIB} -static -static-libgcc -static-libstdc++)
 
+# --- Stream-Deck-Schnittstelle ueber echtes HTTP (eigener Port) ---------------------------------
+add_executable(remote_test tools/remote_test.cpp src/remote.cpp src/update_check.cpp src/commands.cpp src/engine.cpp src/voicechanger.cpp src/soundboard.cpp src/opus_preview.cpp src/settings.cpp ${CORE_SOURCES})
+target_include_directories(remote_test PRIVATE src)
+target_link_libraries(remote_test PRIVATE ole32 oleaut32 uuid user32 winmm mfuuid ws2_32 winhttp ${OPUS_LIB} -static -static-libgcc -static-libstdc++)
+
 # --- Voicechanger: Klangverarbeitung, Stimmen, Einhaengen in die Engine ---------------------------------
 add_executable(voicechanger_test tools/voicechanger_test.cpp src/engine.cpp src/voicechanger.cpp src/soundboard.cpp src/opus_preview.cpp src/settings.cpp ${CORE_SOURCES})
 target_include_directories(voicechanger_test PRIVATE src)

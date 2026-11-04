@@ -265,12 +265,16 @@ Settings LoadSettings(const std::wstring& iniPath, const wchar_t* section)
         }
     }
     {
-        // Ein Schluessel je Knopf: Slot<n>=RRGGBB|Lautstaerke|Pfad|Name (Pfade enthalten kein '|', der Name steht zuletzt). SoundCount = hoechster belegter
-        // Knopf, damit nicht alle 400 Schluessel abgefragt werden. Aeltere Versionen: SoundPath<n>/SoundName<n> (n <= 8).
+        // Ein Schluessel je Knopf: Slot<n>=RRGGBB|Lautstaerke|Pfad|Name (Pfade enthalten kein '|', der Name steht zuletzt). Die feste ID steht getrennt in SlotId<n>, auch bei geleerten
+        // Knoepfen; aeltere Versionen ignorieren den Schluessel. SoundCount = hoechster Knopf mit Inhalt oder ID, damit nicht alle 400 Schluessel abgefragt werden.
+        // Aeltere Versionen: SoundPath<n>/SoundName<n> (n <= 8).
         const int count = std::min(kSoundSlots, std::max(0, static_cast<int>(GetPrivateProfileIntW(L"Sounds", L"SoundCount", 0, p))));
         wchar_t   key[32];
         std::vector<wchar_t> buf(2048);
         for (int i = 0; i < count; ++i) {
+            swprintf(key, 32, L"SlotId%d", i + 1);
+            GetPrivateProfileStringW(L"Sounds", key, L"", buf.data(), static_cast<DWORD>(buf.size()), p);
+            s.sounds[i].id = buf.data();
             swprintf(key, 32, L"Slot%d", i + 1);
             GetPrivateProfileStringW(L"Sounds", key, L"", buf.data(), static_cast<DWORD>(buf.size()), p);
             const std::wstring v = buf.data();
@@ -465,9 +469,14 @@ void SaveSettings(const std::wstring& iniPath, const Settings& s)
         int last = 0;
         for (int i = 0; i < kSoundSlots; ++i) {
             const SoundSlot& b = s.sounds[i];
+            wchar_t key[32], head[32];
+            if (!b.id.empty()) {
+                last = i + 1;
+                swprintf(key, 32, L"SlotId%d", i + 1);
+                WritePrivateProfileStringW(L"Sounds", key, b.id.c_str(), p);
+            }
             if (b.path.empty()) continue;
             last = i + 1;
-            wchar_t key[32], head[32];
             swprintf(key, 32, L"Slot%d", i + 1);
             swprintf(head, 32, L"%06X|%d|", static_cast<unsigned>(b.color & 0xFFFFFF), b.volPct);
             WritePrivateProfileStringW(L"Sounds", key, (std::wstring(head) + b.path + L"|" + b.name).c_str(), p);

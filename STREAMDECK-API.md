@@ -34,6 +34,8 @@ Antwort:
 | `source` | Name der gewählten App (für „Musik einspielen“) |
 | `soundPlaying` | Mindestens ein Soundboard-Knopf spielt gerade |
 | `soundsActive` | Liste der Knopfnummern (1–400), die gerade spielen, z. B. `[3,12]` |
+| `soundsActiveIds` | Dasselbe als feste Knopf-IDs, z. B. `["a3f19c02"]` |
+| `soundsRev` | Prüfsumme über alles, was `/sounds` liefert. Ändert sie sich, lohnt es sich, die Liste neu zu holen; ihr Wert selbst hat keine Bedeutung |
 | `profileIndex` / `profileCount` | Position des gewählten Profils in der Liste (1-basiert, 0 = keines) und Anzahl der Profile |
 | `file` | Datei-Player: `{"title":"…","position":12.3,"duration":201.0}` (Sekunden, `duration` −1 = unbekannt) |
 | `ducking` | Die Musik ist gerade durch Ducking abgesenkt |
@@ -62,7 +64,8 @@ Jeder Befehl antwortet mit dem neuen Zustand (gleiches JSON wie `/state`).
 | `profile_next` | Nächstes Profil reihum |
 | `profilenum/<1-10>` | N-tes Profil der Liste (wie in `/profiles`) anwenden; gibt es es nicht, passiert nichts |
 | `source/<exe>` | Audio-Quelle wählen, z.B. `source/spotify.exe` |
-| `sound/<1-400>` | Soundboard-Clip sofort abspielen (leere Plätze tun nichts; „Musik einspielen“ bleibt, wie es ist) |
+| `sound/<1-400>` | Soundboard-Clip sofort abspielen, adressiert über den Platz (leere Plätze tun nichts; „Musik einspielen“ bleibt, wie es ist) |
+| `soundid/<id>` | Wie `sound`, aber über die feste Knopf-ID aus `/sounds`. **Für Stream-Deck-Tasten empfohlen.** Geleerter Knopf: tut nichts; unbekannte ID: `404` |
 | `soundmonitor` | „Selbst hören“ für Soundboard-Clips ein/aus |
 | `filemonitor` | „Selbst hören“ für den Datei-Player ein/aus |
 | `playlist/<Name>` | Gespeicherte Wiedergabeliste laden (ersetzt die aktuelle Liste, startet nicht von selbst) |
@@ -82,7 +85,34 @@ Damit sich Knöpfe passend zu den vorhandenen Namen belegen lassen:
 | `GET /presets` | `{"presets":["Flach","Bass+", …],"current":"Flach"}` (mitgelieferte zuerst, dann eigene) |
 | `GET /profiles` | `{"profiles":["Abend","Zocken"],"current":"Abend"}` |
 | `GET /playlists` | `{"playlists":["Party","Ruhig"],"current":"Party"}` |
-| `GET /sounds` | `{"rows":2,"cols":4,"sounds":[{"slot":1,"name":"Hupe","ready":true}, …]}` – nur belegte Knöpfe, `slot` = Knopfnummer (zeilenweise im Raster) |
+| `GET /sounds` | `{"sounds":[{"slot":1,"id":"a3f19c02","used":true,"name":"Hupe","color":"C0392B","ready":true}, …],"rows":2,"cols":4}` |
+
+Felder je Eintrag von `/sounds`:
+
+| Feld | Bedeutung |
+|---|---|
+| `slot` | Aktueller Platz (1–400, zeilenweise im Raster). Ändert sich beim Verschieben. Zeile und Spalte: `(slot-1) / cols` und `(slot-1) % cols` (ab 0); liegt die Zeile bei `rows` oder darüber, ist der Knopf gerade ausgeblendet, aber weiter abspielbar |
+| `id` | Feste Knopf-ID (8 Hex-Zeichen). Leer, wenn der Knopf noch nie belegt war |
+| `used` | Der Knopf ist belegt. Für eine Auswahlliste nur diese Einträge anzeigen |
+| `name` | Anzeigename, leer bei unbelegten Knöpfen |
+| `color` | Knopffarbe als `RRGGBB`, leer = Standardfarbe |
+| `ready` | Abspielbar. `false` bei leeren Knöpfen und wenn die Datei nicht geladen werden konnte |
+
+Die Liste enthält mindestens 8 Einträge und reicht bis zum letzten Knopf mit Inhalt oder ID, also auch mit leeren Knöpfen dazwischen.
+
+### Feste Knopf-IDs
+
+Eine Stream-Deck-Taste sollte sich die `id` merken und `soundid/<id>` senden. So bleibt sie beim selben Knopf:
+
+| Änderung im Soundboard | ID | Taste |
+|---|---|---|
+| Knopf verschieben, Raster ändern, Profil wechseln | bleibt | funktioniert weiter |
+| Name, Farbe, Lautstärke oder Datei ändern | bleibt | spielt den geänderten Knopf |
+| Knopf leeren | bleibt | `used` ist `false`, die Taste tut nichts; nach dem Neubelegen spielt sie wieder |
+| `.vtboard` importieren | kommt aus der Datei | funktioniert weiter, wenn die Datei diese ID enthält |
+| `.vtboard` ohne IDs importieren (fremdes Board, Export einer älteren Version) | neu | ID nicht mehr in `/sounds`, `soundid` antwortet `404`: Taste neu zuweisen |
+
+Eine ID, die in `/sounds` fehlt, heißt also: Den Knopf gibt es nicht mehr. Ein Eintrag mit `used: false` heißt: Der Knopf ist gerade leer.
 
 ## Beispiele
 
@@ -96,6 +126,7 @@ curl -X POST -H "X-VoiceTune: 1" http://127.0.0.1:19470/cmd/musicvol_up
 curl -X POST -H "X-VoiceTune: 1" http://127.0.0.1:19470/cmd/musicvol/80
 curl -X POST -H "X-VoiceTune: 1" http://127.0.0.1:19470/cmd/profile/Abend
 curl -X POST -H "X-VoiceTune: 1" http://127.0.0.1:19470/cmd/sound/3
+curl -X POST -H "X-VoiceTune: 1" http://127.0.0.1:19470/cmd/soundid/a3f19c02
 curl http://127.0.0.1:19470/profiles
 ```
 

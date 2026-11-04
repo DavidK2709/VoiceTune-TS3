@@ -180,6 +180,7 @@ public:
     // (Zeilen x Spalten) legt fest, wie viele davon sichtbar sind. Alle Befehle sind aus jedem Thread aufrufbar.
     struct SoundInfo {
         std::wstring      name, path;
+        std::wstring      id;            // feste Knopf-ID (leer = Knopf war noch nie belegt)
         Soundboard::State state   = Soundboard::State::Empty;
         double            seconds = 0;
         uint32_t          color   = 0;   // 0xRRGGBB, 0 = Standardfarbe
@@ -192,6 +193,7 @@ public:
     void                   SoundSwap(int a, int b); // zwei Knoepfe tauschen (Ziehen im Raster)
     void                   SoundRename(int slot, const std::wstring& name);
     void                   SoundPlay(int slot);   // spielt den Clip; unabhaengig von "Musik einspielen" (der Schalter bleibt, wie er ist)
+    bool                   SoundPlayId(const std::wstring& id); // wie SoundPlay, aber ueber die feste Knopf-ID; false = ID unbekannt (geleerter Knopf: true, spielt aber nichts)
     void                   SoundStop();           // alle Clips stoppen
     void                   SetSoundVolume(int pct); // Gesamtlautstaerke 0..200
     void                   SetSoundGrid(int rows, int cols);

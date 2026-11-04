@@ -22,6 +22,7 @@
 //   Version=1
 //   Rows=2
 //   Cols=4
+//   SlotId1=a3f19c02
 //   Slot1=C0392B|100|..\Sounds\hupe.wav|Hupe
 #include <string>
 #include <vector>
