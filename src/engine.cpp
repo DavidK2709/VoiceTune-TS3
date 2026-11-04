@@ -106,6 +106,13 @@ void Engine::Init(const std::wstring& configDir)
     if (!settings_.lastPlaylist.empty()) StartProber();
     localOut_.SetLogger(logger_);
     localOut_.Start();
+    voiceEnabled_ = false; // auch nach dem Deaktivieren/Aktivieren des Plugins wieder die eigene Stimme
+    voiceBusy_    = false;
+    StoreVoiceParamsLocked();
+    voiceMonGain_ = settings_.voiceMonitorPct / 100.0f;
+    voiceLong_    = settings_.voiceLongWindow;
+    voiceOut_.SetLogger(logger_);
+    voiceOut_.Start();
     sounds_.Start(); // nach einem Shutdown wieder bereit (Plugin deaktiviert und wieder aktiviert)
     quit_     = false;
     pumpQuit_ = false;
@@ -123,6 +130,7 @@ void Engine::Shutdown()
     if (pump_.joinable()) pump_.join(); // Ersatztakt (benutzt Soundboard, Datei-Ring und lokale Ausgabe)
     sounds_.Stop(); // Lade-Thread des Soundboards (muss vor dem Entladen der DLL weg sein)
     localOut_.Stop(); // ebenso der Thread der lokalen Ausgabe
+    voiceOut_.Stop();
     std::atomic_store(&opus_, std::shared_ptr<OpusPreview>());
     if (engagedMask_.exchange(0) && preCb_) preCb_(lastSchid_.load(), 0); // TS3-Einstellungen des Nutzers wiederherstellen
     gateOn_ = false;
@@ -260,11 +268,10 @@ PresetResult Engine::SaveProfile(const std::wstring& name)
 {
     std::lock_guard<std::mutex> lk(mutex_);
     Profile snap = ProfileFromSettings(settings_);
-    if (const Profile* old = settings_.profiles.Find(name)) { // Automatik und Voicechanger-Wert eines vorhandenen Profils bleiben beim Aktualisieren erhalten
+    if (const Profile* old = settings_.profiles.Find(name)) { // die Automatik eines vorhandenen Profils bleibt beim Aktualisieren erhalten
         snap.autoServerUid  = old->autoServerUid;
         snap.autoServerName = old->autoServerName;
         snap.autoChannel    = old->autoChannel;
-        snap.voicePreset    = old->voicePreset;
     }
     const PresetResult r = settings_.profiles.Save(name, snap);
     if (r == PresetResult::Ok || r == PresetResult::Updated) {
@@ -327,6 +334,7 @@ bool Engine::ApplyProfile(const std::wstring& name)
     SetOpusPreview(p.opusPreview);
     SetSoundGrid(p.soundRows, p.soundCols);
     SetSoundVolume(p.soundVolPct);
+    if (!p.voicePreset.empty()) ApplyVoicePreset(p.voicePreset);
     std::lock_guard<std::mutex> lk(mutex_);
     settings_.profileName = p.name;
     SaveLocked();
@@ -402,6 +410,151 @@ bool Engine::ApplyNextProfile()
         next = settings_.profiles.NextAfter(settings_.profileName);
     }
     return !next.empty() && ApplyProfile(next);
+}
+
+void Engine::StoreVoiceParamsLocked()
+{
+    const VoiceParams& v = settings_.voice;
+    voicePitch_   = v.pitch;
+    voiceFormant_ = v.formant;
+    voiceGainDb_  = v.gainDb;
+    voiceWet_     = v.wetPct;
+    voiceMirror_  = v.mirror;
+    voiceInvert_  = v.invert;
+}
+
+void Engine::SetVoiceEnabled(bool on)
+{
+    if (on) voiceBusy_ = true;
+    voiceEnabled_ = on;
+}
+
+void Engine::SetVoiceParams(const VoiceParams& p)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.voice = voicepresets::Clamped(p);
+    StoreVoiceParamsLocked();
+    dirty_ = true;
+}
+
+void Engine::SetVoiceMonitor(int pct)
+{
+    pct           = std::clamp(pct, 0, 100);
+    voiceMonGain_ = pct / 100.0f;
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.voiceMonitorPct = pct;
+    dirty_                    = true;
+}
+
+void Engine::SetVoiceLongWindow(bool on)
+{
+    voiceLong_ = on;
+    std::lock_guard<std::mutex> lk(mutex_);
+    settings_.voiceLongWindow = on;
+    SaveLocked();
+}
+
+PresetResult Engine::SaveVoicePreset(const std::wstring& name)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    const PresetResult r = settings_.voicePresets.Save(name, settings_.voice);
+    if (r == PresetResult::Ok || r == PresetResult::Updated) {
+        settings_.voicePresetName = presets::Sanitize(name);
+        SaveLocked();
+    }
+    return r;
+}
+
+PresetResult Engine::RenameVoicePreset(const std::wstring& from, const std::wstring& to)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    const PresetResult r = settings_.voicePresets.Rename(from, to);
+    if (r == PresetResult::Ok) {
+        const std::wstring clean = presets::Sanitize(to);
+        if (presets::EqualNoCase(settings_.voicePresetName, from)) settings_.voicePresetName = clean;
+        for (auto& pr : settings_.profiles.items) // Profile, die diese Stimme benutzen, folgen dem neuen Namen
+            if (presets::EqualNoCase(pr.voicePreset, from)) pr.voicePreset = clean;
+        SaveLocked();
+    }
+    return r;
+}
+
+bool Engine::DeleteVoicePreset(const std::wstring& name)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    const bool ok = settings_.voicePresets.Delete(name);
+    if (ok) {
+        if (presets::EqualNoCase(settings_.voicePresetName, name)) settings_.voicePresetName.clear();
+        for (auto& pr : settings_.profiles.items)
+            if (presets::EqualNoCase(pr.voicePreset, name)) pr.voicePreset.clear();
+        SaveLocked();
+    }
+    return ok;
+}
+
+bool Engine::ApplyVoicePreset(const std::wstring& name)
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    const voicepresets::Voice* v = voicepresets::FindBuiltin(name);
+    if (!v) v = settings_.voicePresets.Find(name);
+    if (!v) return false;
+    settings_.voice           = v->params;
+    settings_.voicePresetName = v->name;
+    StoreVoiceParamsLocked();
+    SaveLocked();
+    return true;
+}
+
+// Mikrofon-Callback: verfremdet den Mikrofonblock und speist das Abhoeren. Laeuft vor dem Einmischen der Musik, die bleibt also unveraendert.
+void Engine::ProcessVoice(uint64_t schid, short* samples, int frames, int channels, int* edited)
+{
+    const bool  on     = voiceEnabled_.load(std::memory_order_relaxed);
+    const float monSet = voiceMonGain_.load(std::memory_order_relaxed);
+    if (!on && monSet <= 0.0f && !voiceBusy_.load(std::memory_order_relaxed)) return; // aus: der Block bleibt unberuehrt, keine Latenz
+
+    std::lock_guard<std::mutex> lk(voiceMutex_);
+    const ULONGLONG now = GetTickCount64();
+
+    VoiceSlot* slot = nullptr;
+    for (auto& s : voiceSlots_)
+        if (s.schid == schid) slot = &s;
+    const bool fresh = !slot; // Verbindung neu oder TS3 hat eine Weile nichts geliefert: was noch im Puffer liegt, ist veraltet
+    if (!slot) {
+        slot = &voiceSlots_[0];
+        for (auto& s : voiceSlots_)
+            if (s.lastUsed < slot->lastUsed) slot = &s;
+        slot->schid = schid;
+    }
+    if (fresh || now - slot->lastUsed > 500) slot->dsp.Reset(on);
+    slot->lastUsed = now;
+
+    VoiceParams p;
+    p.pitch   = voicePitch_.load(std::memory_order_relaxed);
+    p.formant = voiceFormant_.load(std::memory_order_relaxed);
+    p.gainDb  = voiceGainDb_.load(std::memory_order_relaxed);
+    p.wetPct  = voiceWet_.load(std::memory_order_relaxed);
+    p.mirror  = voiceMirror_.load(std::memory_order_relaxed);
+    p.invert  = voiceInvert_.load(std::memory_order_relaxed);
+    if (slot->dsp.Process(reinterpret_cast<int16_t*>(samples), frames, channels, p, on, voiceLong_.load(std::memory_order_relaxed))) *edited |= 1;
+    voiceBusy_ = on || slot->dsp.Busy();
+
+    // Abhoeren: nur eine Verbindung speist die Ausgabe, eine andere uebernimmt erst, wenn die bisherige verstummt ist
+    if (schid != voiceMonSchid_ && now - voiceMonTick_ > 200) voiceMonSchid_ = schid;
+    if (schid != voiceMonSchid_) return;
+    voiceMonTick_ = now;
+    if (monSet <= 0.0f && voiceMonSmooth_ <= 0.0f) return;
+    const size_t need = static_cast<size_t>(frames) * 2;
+    if (voiceMonBlock_.size() < need) voiceMonBlock_.resize(need);
+    const float micGain = micGain_.load(std::memory_order_relaxed); // so laut, wie es auch gesendet wird
+    const float from = voiceMonSmooth_, step = (monSet - from) / static_cast<float>(frames);
+    for (int i = 0; i < frames; ++i) {
+        float mono = 0;
+        for (int c = 0; c < channels; ++c) mono += samples[static_cast<size_t>(i) * channels + c];
+        const int16_t v = mixer::SoftClip(mono / static_cast<float>(channels) * micGain * (from + step * static_cast<float>(i + 1)));
+        voiceMonBlock_[2 * static_cast<size_t>(i)] = voiceMonBlock_[2 * static_cast<size_t>(i) + 1] = v;
+    }
+    voiceMonSmooth_ = monSet;
+    voiceOut_.Write(voiceMonBlock_.data(), static_cast<size_t>(frames));
 }
 
 void Engine::SetQuality(int q)
@@ -1056,6 +1209,7 @@ void Engine::Mix(uint64_t schid, short* samples, int frames, int channels, int* 
     if (!AppOn() && !fileActive_.load(std::memory_order_relaxed) && !sounds_.Active() && !sounds_.PreviewActive()) {
         holdFrames_ = std::max<int64_t>(0, holdFrames_ - frames);
         duckShown_.store(1.0f, std::memory_order_relaxed); // keine Musik, nichts abzusenken
+        ProcessVoice(schid, samples, frames, channels, edited);
         if (micGain_.load() != 1.0f) { // Mikrofon-Lautstaerke gilt auch ohne Musik
             mixer::MixInto(reinterpret_cast<int16_t*>(samples), frames, channels, nullptr, 0, micGain_.load(), 1.0f);
             *edited |= 1;
@@ -1117,6 +1271,7 @@ void Engine::Mix(uint64_t schid, short* samples, int frames, int channels, int* 
         gate_.Configure(gateDb_.load(std::memory_order_relaxed));
         gate_.Process(reinterpret_cast<int16_t*>(samples), frames, channels);
     }
+    ProcessVoice(schid, samples, frames, channels, edited); // nach dem Gate, vor dem Einmischen: nur deine Stimme wird verfremdet
 
     const float micGain = micGain_.load();
     if (audio || micGain != 1.0f)

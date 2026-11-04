@@ -30,7 +30,7 @@ oder `scripts\package.ps1` ausführen und `build\VoiceTune.ts3_plugin` doppelkli
 In TeamSpeak: *Einstellungen → Plugins → VoiceTune* aktivieren, falls es nicht von selbst geschieht (das Plugin hat einen neuen Namen). Im Menü *Plugins* steht es danach mit eigenem kleinen Icon.
 
 ## Benutzen
-*Plugins → VoiceTune → Steuerung öffnen* öffnet das Fenster. Links die **Seitenleiste** mit fünf Symbolen (die Markierung gleitet beim Wechsel mit, die neue Seite blendet weich ein): **Quelle** (Quelle & Mix) und **EQ** (Equalizer) für das, was du beim Musikhören laufend anfasst, **Dateien** und **Sounds** für Dateien und Jingles sowie **Voicechanger** (Platzhalter, hier entstehen die Stimmeffekte). Oben links steht der Titel der aktuellen Seite, **oben in der Mitte das aktuelle Profil** (Name mit **◀ ▶** zum Durchblättern; ein Klick auf den Namen öffnet die Profil-Verwaltung).
+*Plugins → VoiceTune → Steuerung öffnen* öffnet das Fenster. Links die **Seitenleiste** mit fünf Symbolen (die Markierung gleitet beim Wechsel mit, die neue Seite blendet weich ein): **Quelle** (Quelle & Mix) und **EQ** (Equalizer) für das, was du beim Musikhören laufend anfasst, **Dateien** und **Sounds** für Dateien und Jingles sowie **Voicechanger** für deine Stimme. Oben links steht der Titel der aktuellen Seite, **oben in der Mitte das aktuelle Profil** (Name mit **◀ ▶** zum Durchblättern; ein Klick auf den Namen öffnet die Profil-Verwaltung).
 Alles, was man einmal einstellt (Sprache, Senden, Profile verwalten, Hotkeys, Erweitert), liegt hinter dem **Zahnrad** oben rechts neben dem Status-Schild (AKTIV/WARTET/AUS): Es öffnet ein Popup über der Oberfläche.
 
 ### Seite „Quelle & Mix“
@@ -50,7 +50,7 @@ Alles, was man einmal einstellt (Sprache, Senden, Profile verwalten, Hotkeys, Er
 - **Musik-/Mikrofon-Lautstärke**: 0–200 %, rastet bei 100 % ein.
 - **Mikrofon stumm** (Mikrofon-Symbol links neben dem Wert der Mikrofon-Lautstärke): deine Stimme wird nicht gesendet, die Musik läuft weiter. Wirkt auch, wenn gerade keine Musik läuft.
   Der Zustand wird **absichtlich nicht gespeichert** – nach einem Neustart ist das Mikrofon wieder an, damit du es nicht versehentlich stumm lässt.
-- **Profile**: ein Profil ist ein benannter Schnappschuss von Quelle, Lautstärken, Mithören, Equalizer, Qualität und Opus-Schaltern (nicht: Stumm, „Musik einspielen“, Musikmodus). Das aktuelle Profil steht **oben in der Mitte des Fensters**; **◀ ▶** blättert durch die Profile und wendet sie sofort an.
+- **Profile**: ein Profil ist ein benannter Schnappschuss von Quelle, Lautstärken, Mithören, Equalizer, Qualität, Opus-Schaltern und der Voicechanger-Stimme (nicht: Stumm, „Musik einspielen“, Musikmodus). Das aktuelle Profil steht **oben in der Mitte des Fensters**; **◀ ▶** blättert durch die Profile und wendet sie sofort an.
   Verwaltet wird es im **Zahnrad-Popup** (Karte *Profile*): **Speichern als …** legt eines an (oder aktualisiert das gewählte), **Umbenennen** und **Löschen** (zweiter Klick zur Sicherheit) gelten für das gewählte. Hast du nach dem Anwenden etwas verändert, zeigt ein orangefarbener Punkt am Namen oben „(geändert)“. Bis zu 30 Profile; per Hotkey „nächstes Profil“ oder Stream Deck wechselst du reihum.
 
 ### Seite „Equalizer“
@@ -102,8 +102,20 @@ Bei Browsern wird der gesamte Browser-Ton aufgenommen (nicht nur ein Tab).
 - **Mini-Fenster** (Symbol links neben dem Zahnrad oder *Plugins → VoiceTune → Mini-Fenster öffnen*): ein kleines, rahmenloses Fenster, das immer im Vordergrund bleibt – mit Quelle, Musik-Lautstärke, Mikrofon-stumm-Knopf und „Musik einspielen“. Am Hintergrund ziehen verschiebt es, die Position wird gemerkt, Esc oder × schließt.
 - **Tray-Symbol** (Einstellungen → Allgemein → *Tray-Symbol anzeigen*, Standard aus): Linksklick öffnet die Steuerung, Rechtsklick ein Menü (Musik ein/aus, Mikrofon stumm, nächstes Profil, Soundboard, Mini-Fenster).
 
-### Reiter „Voicechanger“ (Entwicklung)
-Platzhalter für den Voicechanger. Der Spielbereich des Voicechanger-Entwicklers ist bewusst von der restlichen Oberfläche getrennt: die Seite in `src/voicechanger_page.{h,cpp}`, die Klangverarbeitung in `src/voicechanger.{h,cpp}` (Anleitung zum Einhängen in die Engine steht im Kopf von `voicechanger.h`). `config_dialog.cpp` ruft die Seite nur zum Zeichnen auf (Zweig „Seite 4“).
+### Seite „Voicechanger“
+Verfremdet deine Stimme live. Musik, Dateien und Soundboard-Clips bleiben davon unberührt, sie werden erst danach eingemischt.
+- **Ein/Aus**: Schalter oben rechts auf der Seite. Der Zustand wird **absichtlich nicht gespeichert** – nach einem Neustart klingst du wieder wie du selbst. Solange der Voicechanger aus ist und nicht abgehört wird, bleibt das Mikrofon-Signal unberührt und es entsteht keine Latenz.
+- **Stimmen**: Links stehen die mitgelieferten Stimmen (Unverändert, Tiefe Stimme, Helle Stimme, Monster, Kobold, Spiegel) und deine eigenen. Ein Klick wendet eine Stimme an; ein orangefarbener Punkt zeigt, dass die Regler davon abweichen. **Speichern als …** legt eine eigene Stimme an oder aktualisiert sie (bis 50, Namen bis 28 Zeichen; Enter speichert, Esc bricht ab, Strg+V fügt ein), **Umbenennen** und **Löschen** (zweiter Klick zur Sicherheit) gelten für eigene Stimmen.
+- **Tonhöhe (Pitch)**: ±12 Halbtöne, die Formanten bleiben dabei stehen. **Formant (Stimmcharakter)**: ±12 Halbtöne, die Tonhöhe bleibt dabei stehen; beides zusammen klingt wie schneller oder langsamer abgespielt.
+- **Lautstärke (Gain)**: ±24 dB. **Dry/Wet**: Anteil von Original und Effekt, zeitlich aufeinander ausgerichtet.
+- **Stimme spiegeln**: spiegelt das Spektrum um knapp 4 kHz, tiefe Frequenzen werden hoch und umgekehrt. Das klingt sehr fremd und ist schwer verständlich; Inhalt über 4 kHz entfällt.
+- **Polarität invertieren**: dreht das Vorzeichen des Effekt-Anteils. Allein ist das nicht hörbar, im Mix mit dem Original gibt es Auslöschungen (bei 50 % Dry/Wet und neutralen Reglern Stille).
+- **Latenz**: Der Effekt verzögert deine Stimme um 21 ms. **Tiefe Stimmen: bessere Qualität** verlängert das Analysefenster auf 43 ms: Unter etwa 150 Hz trennt das kurze Fenster die Obertöne nicht mehr sauber, die Tonhöhe wird ungenauer und die Stimme rauer. Bei tiefer Stimme also ausprobieren.
+- **Selbst abhören** (0–100 %, 0 = aus): spielt deine Stimme so, wie sie gesendet wird, auf dem Windows-Standard-Ausgabegerät; auch bei ausgeschaltetem Voicechanger, zum Vergleichen. **Nur mit Kopfhörern**, sonst gibt es eine Rückkopplung. Du hörst dich rund 70 ms (mit „Tiefe Stimmen“ rund 90 ms) verzögert.
+- **Grenze**: Der Effekt arbeitet im Mikrofon-Callback von TeamSpeak. Liefert TS3 kein Mikrofon (nicht verbunden, stumm geschaltet), gibt es auch nichts abzuhören; die Seite weist darauf hin. Zum Ausprobieren ohne Server: *Einstellungen → Aufnahme → Test starten*.
+- **Profile** merken sich die gewählte Stimme (nicht, ob der Voicechanger an ist). Ältere Profile ohne Stimme lassen sie beim Anwenden in Ruhe.
+
+Code: die Seite in `src/voicechanger_page.{h,cpp}`, die Klangverarbeitung in `src/voicechanger.{h,cpp}`, die Stimmen in `src/voice_presets.h`, das Einhängen in `Engine::ProcessVoice`.
 
 ### Einstellungen (Zahnrad-Popup)
 Das Zahnrad öffnet das Popup, ein zweiter Klick auf das Zahnrad, ein Klick neben das Panel oder **Esc** schließt es. Oben drei Reiter: **Allgemein**, **Audio**, **Profile**. Ein kleiner blauer Punkt am Zahnrad zeigt, dass eine neue Version bereitsteht.
@@ -170,6 +182,7 @@ build\soundboard_test.exe build\pt                # Soundboard (Mischen, Stimmen
 build\logic_test.exe                               # Ducking, Sprach-Erkennung, Lautheit, Soundboard-Datei (.vtboard), Update-Vergleich
 build\nowplaying_test.exe                          # Titelbereinigung für „Titel melden“
 build\i18n_test.exe                                # Übersetzungstabelle Deutsch/English
+build\voicechanger_test.exe                        # Voicechanger: Tonhöhe, Formant, Gain, Spiegeln, Dry/Wet, Latenz, Umschalten, Stimmen, Engine
 build\playlist_test.exe                            # Wiedergabeliste
 build\jitter_test.exe                              # Simulation: alte vs. neue Puffer-Logik, Mithör-Verzögerung
 build\optimizer_test.exe                           # Klang-Optimierung: Mono-Summe, Hochpass, Begrenzer

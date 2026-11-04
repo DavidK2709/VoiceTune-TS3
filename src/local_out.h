@@ -37,7 +37,8 @@
 
 class LocalOut {
 public:
-    LocalOut() : ring_(48000), reader_(ring_, 1920) {}
+    // targetFrames = Vorrat vor dem Geraet, queueFrames = so viel liegt hoechstens im Geraet. Die Vorgaben sind stabil fuer Clips und Dateien.
+    explicit LocalOut(size_t targetFrames = 1920, UINT32 queueFrames = 1920) : ring_(48000), reader_(ring_, targetFrames, targetFrames), queueFrames_(queueFrames) {}
     ~LocalOut() { Stop(); }
     LocalOut(const LocalOut&)            = delete;
     LocalOut& operator=(const LocalOut&) = delete;
@@ -60,9 +61,9 @@ public:
     // Stereo-Frames (interleaved int16, 48 kHz) zur Wiedergabe vormerken.
     void Write(const int16_t* stereo, size_t frames) { ring_.Write(stereo, frames); }
     void Clear() { ring_.Clear(); }
+    uint64_t TotalWritten() const { return ring_.TotalWritten(); }
 
 private:
-    static constexpr UINT32 kQueueFrames = 1920;   // so viel (40 ms) liegt hoechstens im Geraet
     static constexpr int64_t kIdleFrames  = 144000; // 3 s Stille: Geraet freigeben
 
     struct Dev {
@@ -151,7 +152,7 @@ private:
                 ring_.Clear();
                 continue;
             }
-            const UINT32 want = pad < kQueueFrames ? kQueueFrames - pad : 0;
+            const UINT32 want = pad < queueFrames_ ? queueFrames_ - pad : 0;
             if (want < 240) continue; // erst ab 5 ms nachfuellen
             BYTE* data = nullptr;
             if (FAILED(dev.render->GetBuffer(want, &data))) {
@@ -175,6 +176,7 @@ private:
 
     FrameRing           ring_;
     JitterReader        reader_; // nur vom Ausgabe-Thread
+    UINT32              queueFrames_;
     std::thread         thread_;
     std::atomic<bool>   quit_{false};
     void (*logger_)(const char*) = nullptr;

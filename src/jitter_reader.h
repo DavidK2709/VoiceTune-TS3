@@ -49,10 +49,11 @@ public:
     static constexpr size_t kMinTarget    = 1920;  // 40 ms: darunter wird der Puffer bei 20-ms-Bloecken instabil
     static constexpr int    kRetargetHold = 7200;  // neues Ziel erst uebernehmen, wenn es 150 ms unveraendert blieb (Regler ziehen)
 
-    explicit JitterReader(FrameRing& ring, size_t targetFrames = 2880) : ring_(ring), target_(std::max(targetFrames, kMinTarget)), requested_(target_) { Reset(); }
+    // minTarget: kleinster erlaubter Vorrat. Nur senken, wenn gelegentliche Aussetzer weniger stoeren als Verzoegerung (Abhoeren der eigenen Stimme).
+    explicit JitterReader(FrameRing& ring, size_t targetFrames = 2880, size_t minTarget = kMinTarget) : ring_(ring), minTarget_(minTarget), target_(std::max(targetFrames, minTarget)), requested_(target_) { Reset(); }
 
     // Neue Ziel-Verzoegerung (aus beliebigem Thread). Wird im naechsten Read() nach kurzer Beruhigung uebernommen.
-    void SetTarget(size_t frames) { requested_.store(std::max(frames, kMinTarget), std::memory_order_relaxed); }
+    void SetTarget(size_t frames) { requested_.store(std::max(frames, minTarget_), std::memory_order_relaxed); }
 
     void Reset()
     {
@@ -232,6 +233,7 @@ private:
     }
 
     FrameRing&           ring_;
+    size_t               minTarget_;
     size_t               target_;
     std::atomic<size_t>  requested_;
     size_t               maxPullAhead_ = SIZE_MAX;

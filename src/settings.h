@@ -26,6 +26,7 @@
 #include "playlists.h"
 #include "presets.h"
 #include "profiles.h"
+#include "voice_presets.h"
 
 // Soundboard: kurze Clips (Jingles), per Hotkey/Fenster/Stream Deck ueber der Musik abspielbar. Die Knoepfe liegen zeilenweise in einem Raster
 // (Slot = Zeile * Spalten + Spalte); die ersten kSoundHotkeys Knoepfe koennen ein TS3-Tastenkuerzel bekommen.
@@ -134,6 +135,14 @@ struct Settings {
     // Profil automatisch nach Server/Kanal waehlen; Tray-Symbol
     bool autoProfile = true;
     bool trayIcon    = false;
+
+    // Voicechanger: aktuelle Regler, gewaehlte Stimme (leer = keine), eigene Stimmen, Lautstaerke fuers Abhoeren (0..100).
+    // Ein/Aus wird absichtlich nicht gespeichert (wie "Mikrofon stumm"): nach einem Neustart klingst du wieder wie du selbst.
+    VoiceParams        voice;
+    std::wstring       voicePresetName;
+    voicepresets::Book voicePresets;
+    int                voiceMonitorPct = 0;
+    bool               voiceLongWindow = false; // bessere Qualitaet fuer tiefe Stimmen, 43 statt 21 ms Effekt-Latenz
 };
 
 // Schnappschuss der aktuellen Einstellungen als Profil (Name leer, wird beim Speichern gesetzt)
@@ -157,6 +166,7 @@ inline Profile ProfileFromSettings(const Settings& s)
     p.soundRows       = s.soundRows;
     p.soundCols       = s.soundCols;
     p.soundVolPct     = s.soundVolPct;
+    p.voicePreset     = s.voicePresetName;
     return p;
 }
 
@@ -165,7 +175,8 @@ inline bool SameProfile(const Profile& a, const Profile& b)
 {
     return a.targetExe == b.targetExe && a.musicVolPct == b.musicVolPct && a.micVolPct == b.micVolPct && a.monitor == b.monitor && a.monitorDelayMs == b.monitorDelayMs &&
            a.eqEnabled == b.eqEnabled && a.eqBands == b.eqBands && presets::CurvesMatch(a.eqGains, b.eqGains, 0.05f) && a.quality == b.quality && a.mono == b.mono &&
-           a.optimizeForOpus == b.optimizeForOpus && a.opusPreview == b.opusPreview && a.soundRows == b.soundRows && a.soundCols == b.soundCols && a.soundVolPct == b.soundVolPct;
+           a.optimizeForOpus == b.optimizeForOpus && a.opusPreview == b.opusPreview && a.soundRows == b.soundRows && a.soundCols == b.soundCols && a.soundVolPct == b.soundVolPct &&
+           (a.voicePreset.empty() || b.voicePreset.empty() || presets::EqualNoCase(a.voicePreset, b.voicePreset)); // aeltere Profile ohne Stimme lassen die Stimme in Ruhe
 }
 
 // section: Abschnittsname der INI ("VoiceTune"; die Vorgaengerversion nutzte "AppAudioMixer")
