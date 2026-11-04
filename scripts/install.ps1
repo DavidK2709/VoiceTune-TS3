@@ -23,7 +23,8 @@ param(
 )
 
 if (-not (Test-Path $Dll)) { throw "DLL nicht gefunden: $Dll (zuerst bauen, siehe README.md)" }
-if (Get-Process ts3client_win64 -ErrorAction SilentlyContinue) { throw 'TeamSpeak laeuft noch - bitte beenden und erneut ausfuehren.' }
+# Nur Prozesse mit Threads zaehlen: Ein bereits beendeter Prozess bleibt gelistet (ohne Threads), solange noch jemand ein Handle auf ihn haelt.
+if (Get-Process ts3client_win64 -ErrorAction SilentlyContinue | Where-Object { $_.Threads.Count -gt 0 }) { throw 'TeamSpeak laeuft noch - bitte beenden und erneut ausfuehren.' }
 
 $target = Join-Path $env:APPDATA 'TS3Client\plugins'
 New-Item -ItemType Directory -Force $target | Out-Null

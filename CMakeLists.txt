@@ -86,7 +86,7 @@ target_include_directories(soundboard_test PRIVATE src)
 target_link_libraries(soundboard_test PRIVATE ole32 uuid mfuuid -static -static-libgcc -static-libstdc++)
 
 # --- Engine + Datei-Player ohne Fenster ----------------------------------------------------
-add_executable(engine_files_test tools/engine_files_test.cpp src/engine.cpp src/soundboard.cpp src/opus_preview.cpp src/settings.cpp ${CORE_SOURCES})
+add_executable(engine_files_test tools/engine_files_test.cpp src/engine.cpp src/voicechanger.cpp src/soundboard.cpp src/opus_preview.cpp src/settings.cpp ${CORE_SOURCES})
 target_include_directories(engine_files_test PRIVATE src)
 target_link_libraries(engine_files_test PRIVATE ole32 oleaut32 uuid user32 winmm mfuuid ${OPUS_LIB} -static -static-libgcc -static-libstdc++)
 
@@ -113,9 +113,14 @@ add_executable(nowplaying_test tools/nowplaying_test.cpp)
 target_include_directories(nowplaying_test PRIVATE src)
 
 # --- Gemeinsame Befehle (Hotkeys, Stream-Deck-API) ------------------------------------------
-add_executable(commands_test tools/commands_test.cpp src/commands.cpp src/engine.cpp src/soundboard.cpp src/opus_preview.cpp src/settings.cpp ${CORE_SOURCES})
+add_executable(commands_test tools/commands_test.cpp src/commands.cpp src/engine.cpp src/voicechanger.cpp src/soundboard.cpp src/opus_preview.cpp src/settings.cpp ${CORE_SOURCES})
 target_include_directories(commands_test PRIVATE src)
 target_link_libraries(commands_test PRIVATE ole32 oleaut32 uuid user32 winmm mfuuid ${OPUS_LIB} -static -static-libgcc -static-libstdc++)
+
+# --- Voicechanger: Klangverarbeitung, Stimmen, Einhaengen in die Engine ---------------------------------
+add_executable(voicechanger_test tools/voicechanger_test.cpp src/engine.cpp src/voicechanger.cpp src/soundboard.cpp src/opus_preview.cpp src/settings.cpp ${CORE_SOURCES})
+target_include_directories(voicechanger_test PRIVATE src)
+target_link_libraries(voicechanger_test PRIVATE ole32 oleaut32 uuid user32 winmm mfuuid ${OPUS_LIB} -static -static-libgcc -static-libstdc++)
 
 # --- Uebersetzungstabelle (Deutsch/English) -------------------------------------------------
 add_executable(i18n_test tools/i18n_test.cpp src/i18n.cpp)

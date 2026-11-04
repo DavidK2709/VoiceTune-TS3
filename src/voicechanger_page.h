@@ -16,16 +16,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
- 
+
 #pragma once
-// Reiter "Voicechanger" im Hauptfenster - der Spielbereich fuer den Voicechanger-Entwickler. Die Seite ist bewusst in dieser eigenen Datei gekapselt: hier wird
-// gezeichnet und bedient, ohne dass config_dialog.cpp angefasst werden muss. Die Klangverarbeitung selbst gehoert nach voicechanger.{h,cpp}.
-//
-// Verdrahtung in config_dialog.cpp (nur diese Stellen kennen die Seite):
-//   Paint:        vcpage::Page::Paint(...)   im Zweig "page == 4"
-//   Maus/Tasten:  Page::MouseDown/MouseMove/MouseUp/Wheel/Char/Key  (noch nicht angeschlossen - dort, wo "page == 3" die Soundboard-Ansicht bedient, gleich
-//                 daneben fuer "page == 4" aufrufen; die Signaturen sind wie bei sbv::View)
-// Koordinaten sind die des Hauptfensters (Pixel, bereits mit der Skalierung `s` multipliziert).
+// Reiter "Voicechanger" im Hauptfenster: links die Stimmen (mitgelieferte und eigene), rechts Ein/Aus, die Regler und das Abhoeren. Die Seite haelt nur Anzeigezustand,
+// die Daten liegen in der Engine; die Klangverarbeitung steht in voicechanger.{h,cpp}. Koordinaten sind die des Hauptfensters (Pixel, bereits mit der Skalierung `s` multipliziert).
 #include <windows.h>
 
 #include <objidl.h>
@@ -44,13 +38,44 @@ class Page {
 public:
     void Paint(Gdiplus::Graphics& g, const Gdiplus::RectF& area, float s, const Fonts& f);
 
-    // Eingaben (Client-Koordinaten des Hauptfensters); true = verbraucht. Hier eigene Bedienelemente anschliessen.
-    bool MouseDown(int x, int y, float s) { (void)x; (void)y; (void)s; return false; }
-    void MouseMove(int x, int y, float s) { (void)x; (void)y; (void)s; }
-    void MouseUp(int x, int y, float s) { (void)x; (void)y; (void)s; }
-    bool Wheel(int x, int y, int delta, float s) { (void)x; (void)y; (void)delta; (void)s; return false; }
-    bool Char(wchar_t ch) { (void)ch; return false; }
-    bool Key(WPARAM vk) { (void)vk; return false; }
+    // Eingaben (Client-Koordinaten des Hauptfensters); true = verbraucht.
+    bool MouseDown(int x, int y, float s);
+    void MouseMove(int x, int y, float s);
+    void MouseUp() { drag_ = -1; }
+    bool Wheel(int x, int y, int delta, float s);
+    bool Char(wchar_t ch);
+    bool Key(WPARAM vk);
+
+    bool Dragging() const { return drag_ >= 0; } // ein Regler wird gezogen (der Host haelt die Maus fest)
+    bool WantsKeys() const { return edit_; }     // die Namenseingabe ist offen
+    void CancelEdit() { edit_ = false; }
+
+private:
+    enum Slider { kPitch, kFormant, kGain, kWet, kMonitor, kSliders };
+    struct Geo {
+        Gdiplus::RectF list, saveBtn, renameBtn, deleteBtn, toggle, toggleRow, slider[kSliders], mirror, mirrorRow, invert, invertRow, longWin, longWinRow;
+        float          rowH = 0;
+    };
+    Geo   MakeGeo(const Gdiplus::RectF& area, float s) const;
+    void  SetSlider(int which, int x);
+    void  BeginEdit(bool rename, const std::wstring& name);
+    void  CommitEdit();
+    void  SetToast(const std::wstring& t, bool bad);
+    float MaxScroll(const Geo& g) const;
+    std::wstring RowName(int row) const;
+
+    Gdiplus::RectF area_;
+    bool           painted_ = false;
+    int            hoverRow_ = -1, hoverBtn_ = -1;
+    int            drag_ = -1;
+    float          scroll_ = 0, toggleAnim_ = 0, mirrorAnim_ = 0, invertAnim_ = 0, longAnim_ = 0;
+
+    bool         edit_ = false, editRename_ = false, editSelectAll_ = false;
+    std::wstring editText_, editFrom_;
+    ULONGLONG    deleteArmUntil_ = 0;
+    std::wstring toast_;
+    bool         toastBad_   = false;
+    ULONGLONG    toastUntil_ = 0;
 };
 
 } // namespace vcpage

@@ -711,6 +711,52 @@ int main(int argc, char** argv)
                 click(48, 430);
                 Sleep(600);
                 shoot(base + "v0.bmp");
+                {
+                    const int vx = 96 + 16, vy = 72; // Ursprung der Karte im Fenster (Skalierung 1)
+                    auto vtext = [&](const char* sec, const char* key) {
+                        char buf[128] = {};
+                        GetPrivateProfileStringA(sec, key, "", buf, 128, ini.c_str());
+                        return std::string(buf);
+                    };
+                    click(vx + 40, vy + 44 + 30 + 15);            // zweite Stimme ("Tiefe Stimme")
+                    Sleep(200);
+                    check(vtext("Voice", "Preset") == "Tiefe Stimme" && vtext("Voice", "Params").rfind("-4.0,-2.0,", 0) == 0, "Voicechanger: Stimme waehlen");
+                    click(vx + 272 + 8 + 484 * 3 / 4, vy + 72 + 11); // Tonhoehe auf +6
+                    click(vx + 272 + 8 + 484 / 2, vy + 122 + 11);    // Formant auf 0
+                    click(vx + 272 + 8 + 484 / 2, vy + 172 + 11);    // Gain auf 0 dB
+                    click(vx + 272 + 8 + 484 * 3 / 4, vy + 222 + 11); // Dry/Wet auf 75 %
+                    click(vx + 300, vy + 250);                       // Stimme spiegeln
+                    click(vx + 600, vy + 250);                       // Polaritaet invertieren
+                    click(vx + 300, vy + 300);                       // langes Fenster
+                    click(vx + 14 + 272 + 8 + 456 / 2, vy + 394 + 11); // Abhoeren auf 50 %
+                    click(vx + 700, vy + 26);                        // Voicechanger an
+                    Sleep(300);
+                    shoot(base + "v1.bmp");
+                    click(vx + 100, vy + 404 + 15);                  // Speichern als ...
+                    Sleep(100);
+                    shoot(base + "v2.bmp");
+                    type(L"Mein Bass");
+                    enter();
+                    Sleep(1300);                                     // die Regler speichert der Watcher gesammelt
+                    check(vtext("VoicePresets", "Name1") == "Mein Bass" && vtext("Voice", "Preset") == "Mein Bass", "Voicechanger: Stimme speichern");
+                    check(vtext("VoicePresets", "Params1") == "6.0,0.0,0.0,75,1,1", "Voicechanger: Werte der Stimme");
+                    check(vtext("Voice", "Monitor") == "50" && vtext("Voice", "LongWindow") == "1", "Voicechanger: Abhoeren und Fenster gespeichert");
+                    shoot(base + "v3.bmp");
+                    click(vx + 60, vy + 442 + 15);                   // Umbenennen
+                    type(L"Tiefton");
+                    enter();
+                    Sleep(100);
+                    check(vtext("VoicePresets", "Name1") == "Tiefton", "Voicechanger: umbenennen");
+                    click(vx + 180, vy + 442 + 15);                  // Loeschen: erster Klick fragt nach
+                    Sleep(50);
+                    check(vtext("VoicePresets", "Count") == "1", "Voicechanger: erster Klick loescht nicht");
+                    click(vx + 180, vy + 442 + 15);
+                    Sleep(100);
+                    check(vtext("VoicePresets", "Count") == "0", "Voicechanger: zweiter Klick loescht");
+                    click(vx + 14 + 272 + 8, vy + 394 + 11);         // Abhoeren aus, Voicechanger aus: nichts bleibt an
+                    click(vx + 700, vy + 26);
+                    Sleep(100);
+                }
                 click(48, 126);                          // zurueck auf Seite 0
                 Sleep(400);
                 shoot(base + "p4.bmp");

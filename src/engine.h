@@ -43,6 +43,7 @@
 #include "loudness.h"
 #include "soundboard.h"
 #include "voice_optimizer.h"
+#include "voicechanger.h"
 
 // Kodierung des aktuellen Kanals, wie sie TeamSpeak sendet (fuer die Opus-Vorschau)
 struct EncodeInfo {
@@ -228,6 +229,21 @@ public:
     std::wstring AutoProfileFor(const std::wstring& uid, const std::wstring& channel);
     bool ApplyProfileNumber(int n); // n-tes Profil (1-basiert) anwenden
 
+    // ---- Voicechanger: verfremdet deine Mikrofon-Stimme, unabhaengig von Musik und Clips. Ein/Aus wird absichtlich nicht gespeichert.
+    void         SetVoiceEnabled(bool on);
+    bool         VoiceEnabled() const { return voiceEnabled_.load(); }
+    void         SetVoiceParams(const VoiceParams& p);  // wirkt im naechsten Audio-Block; speichert verzoegert (Regler)
+    void         SetVoiceMonitor(int pct);              // Abhoeren der eigenen Stimme auf dem Windows-Standard-Ausgabegeraet, 0..100 (0 = aus)
+    void         SetVoiceLongWindow(bool on);           // bessere Qualitaet fuer tiefe Stimmen, dafuer 43 statt 21 ms Effekt-Latenz
+    // Eigene Stimmen (mitgelieferte per Name ueber ApplyVoicePreset). Alle Aenderungen werden sofort gespeichert.
+    PresetResult SaveVoicePreset(const std::wstring& name);
+    PresetResult RenameVoicePreset(const std::wstring& from, const std::wstring& to);
+    bool         DeleteVoicePreset(const std::wstring& name);
+    bool         ApplyVoicePreset(const std::wstring& name); // false, wenn es die Stimme nicht gibt
+    // TS3 liefert gerade Mikrofon-Bloecke (ohne sie gibt es weder Effekt noch Abhoeren: nicht verbunden oder stumm und kein "Test starten")
+    bool         MicAlive() const { return GetTickCount64() - lastMixTick_.load(std::memory_order_relaxed) < 500; }
+    uint64_t     VoiceMonitorWritten() const { return voiceOut_.TotalWritten(); } // fuer den Selbsttest
+
     // Now-Playing: meldet einen Titelwechsel (Dateititel oder Fenstertitel der App, bereinigt), sobald er >= 3 s stabil ist und "Musik einspielen" an ist.
     // Leerer Titel = nichts mehr zu melden (Musik aus). Aufruf aus dem Watcher-Thread. Welche Ziele (Chat, Kanal, Metadaten) gelten, steht in den Einstellungen.
     void SetNowPlayingCallback(void (*fn)(const std::wstring& title)) { nowPlayingCb_ = fn; }
@@ -255,7 +271,7 @@ public:
     void SetLogger(void (*fn)(const char*)) { logger_ = fn; }
 
 private:
-    Engine() : ring_(48000), reader_(ring_), monitorRing_(48000 * 3), monitorReader_(monitorRing_), fileRing_(48000), fileReader_(fileRing_) {}
+    Engine() : voiceOut_(1440, 960), ring_(48000), reader_(ring_), monitorRing_(48000 * 3), monitorReader_(monitorRing_), fileRing_(48000), fileReader_(fileRing_) {}
     bool SourceOn() const { return AppOn() || fileActive_.load() || sounds_.Active(); } // irgendeine Quelle (App, Datei oder Soundboard) liefert Audio
     bool AppOn() const { return capturing_.load() && enabledA_.load(); }
     // Mikrofon-Callback bzw. Pump (beide unter renderMutex_): liest die Quellen eines Blocks nach gained_ (App + Datei nach Mono/EQ/Lautstaerke, dazu die
@@ -292,6 +308,24 @@ private:
     std::vector<std::wstring> loudQueue_;
     std::thread          loudThread_;
     std::atomic<bool>    loudRunning_{false}, loudQuit_{false};
+    // Voicechanger. Je Verbindung ein eigener Zustand: "Test starten" laeuft auf einer zweiten Verbindung, deren Mikrofon-Bloecke sich mit denen des Servers abwechseln koennen.
+    struct VoiceSlot {
+        uint64_t     schid    = 0;
+        ULONGLONG    lastUsed = 0;
+        VoiceChanger dsp;
+    };
+    void ProcessVoice(uint64_t schid, short* samples, int frames, int channels, int* edited); // Mikrofon-Callback
+    void StoreVoiceParamsLocked();                 // unter mutex_: settings_.voice an den Audio-Thread geben
+    std::mutex           voiceMutex_;              // schuetzt die Slots, falls zwei Verbindungen aus verschiedenen Threads rufen (nur sehr kurz gehalten)
+    VoiceSlot            voiceSlots_[2];
+    uint64_t             voiceMonSchid_ = 0;       // unter voiceMutex_: diese Verbindung speist das Abhoeren, sonst waere alles doppelt
+    ULONGLONG            voiceMonTick_  = 0;
+    std::vector<int16_t> voiceMonBlock_;           // unter voiceMutex_
+    std::atomic<bool>    voiceEnabled_{false}, voiceBusy_{false}, voiceMirror_{false}, voiceInvert_{false}, voiceLong_{false};
+    std::atomic<float>   voicePitch_{0.0f}, voiceFormant_{0.0f}, voiceGainDb_{0.0f}, voiceMonGain_{0.0f};
+    std::atomic<int>     voiceWet_{100};
+    float                voiceMonSmooth_ = 0.0f;   // unter voiceMutex_
+    LocalOut             voiceOut_;                // Abhoeren: eigene, knapp gepufferte Ausgabe (Clips und Dateien behalten ihre stabilere)
     LocalOut           localOut_;               // Selbst hoeren (eigene Ausgabe)
     std::atomic<bool>  soundMonitor_{true}, fileMonitor_{true};
     std::vector<int16_t> soundScratch_, localMix_, fileScratch_; // unter renderMutex_: Clips eines Blocks, Mix fuer die lokale Ausgabe, Datei-Block

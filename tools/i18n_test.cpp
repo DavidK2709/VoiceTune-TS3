@@ -42,7 +42,7 @@ int main()
     CHECK(count > 150, "Tabelle hat %zu Eintraege", count);
 
     // Texte, die in beiden Sprachen gleich lauten duerfen (Eigennamen, Fachwoerter)
-    const std::set<std::wstring> same = {L"Equalizer", L"Soundboard", L"Sounds", L"Loudness", L"Bass+", L"Hotkeys …", L"Info", L"EQ", L"Audio", L"Version", L"Stream Deck", L"Import …", L"Export …"};
+    const std::set<std::wstring> same = {L"Equalizer", L"Soundboard", L"Sounds", L"Loudness", L"Bass+", L"Hotkeys …", L"Info", L"EQ", L"Audio", L"Version", L"Stream Deck", L"Import …", L"Export …", L"Monster"};
     std::set<std::wstring>       keys;
     for (size_t i = 0; i < count; ++i) {
         const std::wstring de = table[i].de, en = table[i].en;

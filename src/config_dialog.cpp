@@ -2326,6 +2326,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         else if (c->drag.hit == Hit::EqPlot) PaintEq(c, x, y);
         else if (c->drag.hit == Hit::FileSeek) c->seekFrac = SeekFrac(c->lay.fileSeek, x);
         if (c->page == 3 && !c->settingsOpen) c->sbView.MouseMove(x, y, SbHost(c));
+        if (c->page == 4 && !c->settingsOpen) c->voicePage.MouseMove(x, y, c->lay.s);
         c->hover = HitTest(c, x, y);
         TRACKMOUSEEVENT t{sizeof(t), TME_LEAVE, hwnd, 0};
         TrackMouseEvent(&t);
@@ -2335,6 +2336,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         if (c) {
             c->hover = {};
             if (c->page == 3) c->sbView.MouseMove(-1, -1, SbHost(c));
+            if (c->page == 4) c->voicePage.MouseMove(-1, -1, c->lay.s);
         }
         return 0;
     case WM_SETCURSOR:
@@ -2353,6 +2355,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         if (c->deleteArm > 0 && h.hit != Hit::PresetDelete && h.hit != Hit::ProfDelete && h.hit != Hit::PlDelete) c->deleteArm = 0; // "Wirklich loeschen?" verfaellt bei jedem anderen Klick
         if (c->page == 3 && !c->settingsOpen && h.hit == Hit::None && c->sbView.MouseDown(x, y, SbHost(c))) { // Soundboard-Raster, Werkzeugleisten, Editor
             if (c->sbView.Dragging()) SetCapture(hwnd);
+            return 0;
+        }
+        if (c->page == 4 && !c->settingsOpen && h.hit == Hit::None && c->voicePage.MouseDown(x, y, c->lay.s)) { // Stimmen, Regler, Schalter
+            if (c->voicePage.Dragging()) SetCapture(hwnd);
             return 0;
         }
         if (c->menu.open) { // Rechtsklick-Menue offen: Eintrag ausfuehren oder schliessen; der Klick geht nie "durch"
@@ -2451,6 +2457,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if (newPage != c->page) {
                 CancelEdit(c); // eine begonnene Namenseingabe gehoert zur Seite
                 c->sbView.CloseEditor();
+                c->voicePage.CancelEdit();
                 c->pageT = 0;  // neue Seite gleitet ein
             }
             c->page       = newPage;
@@ -2673,6 +2680,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             else c->sbView.Cancel();
             if (msg == WM_LBUTTONUP && c->drag.hit == Hit::None) ReleaseCapture();
         }
+        if (c && c->page == 4 && c->voicePage.Dragging()) {
+            c->voicePage.MouseUp();
+            if (msg == WM_LBUTTONUP && c->drag.hit == Hit::None) ReleaseCapture();
+        }
         if (c && c->drag.hit != Hit::None) {
             if (c->drag.hit == Hit::Listen) Engine::Get().SetPreview(false);
             if (c->drag.hit == Hit::FileSeek && msg == WM_LBUTTONUP) { // erst beim Loslassen springen
@@ -2747,6 +2758,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             c->sbView.Wheel(p.x, p.y, GET_WHEEL_DELTA_WPARAM(wp), SbHost(c));
             return 0;
         }
+        if (c && c->page == 4 && !c->settingsOpen) {
+            POINT p{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+            ScreenToClient(hwnd, &p);
+            c->voicePage.Wheel(p.x, p.y, GET_WHEEL_DELTA_WPARAM(wp), c->lay.s);
+            return 0;
+        }
         if (c && c->page == 0) {
             POINT p{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
             ScreenToClient(hwnd, &p);
@@ -2759,6 +2776,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if (c->checkOpen) c->checkOpen = false;
             else if (c->menu.open) c->menu.open = false;
             else if (c->page == 3 && c->sbView.WantsKeys()) c->sbView.Key(wp, SbHost(c));
+            else if (c->page == 4 && c->voicePage.WantsKeys()) c->voicePage.Key(wp);
             else if (c->settingsOpen) c->settingsOpen = false;
             else if (c->edit.active) CancelEdit(c);
             else if (c->presetOpen) c->presetOpen = false;
@@ -2766,6 +2784,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             else DestroyWindow(hwnd);
         } else if (c && c->page == 3 && c->sbView.WantsKeys()) {
             c->sbView.Key(wp, SbHost(c));
+        } else if (c && c->page == 4 && c->voicePage.WantsKeys()) {
+            c->voicePage.Key(wp);
         } else if (c && c->edit.active && wp == VK_DELETE && c->edit.selectAll) {
             c->edit.text.clear();
             c->edit.selectAll = false;
@@ -2774,6 +2794,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_CHAR: // Namenseingabe fuer eigene EQ-Filter, Profile und Soundboard-Knoepfe
         if (c && c->page == 3 && c->sbView.WantsKeys()) {
             c->sbView.Char(static_cast<wchar_t>(wp), SbHost(c));
+            return 0;
+        }
+        if (c && c->page == 4 && c->voicePage.WantsKeys()) {
+            c->voicePage.Char(static_cast<wchar_t>(wp));
             return 0;
         }
         if (c && c->edit.active) {

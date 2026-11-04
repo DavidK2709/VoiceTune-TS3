@@ -121,6 +121,35 @@ std::wstring FormatGains(const std::vector<float>& gains)
     }
     return out;
 }
+
+// Stimme als Text: "Tonhoehe,Formant,Gain,Wet,Spiegeln,Invertieren"
+std::wstring FormatVoice(const VoiceParams& v)
+{
+    wchar_t buf[96];
+    swprintf(buf, 96, L"%.1f,%.1f,%.1f,%d,%d,%d", v.pitch, v.formant, v.gainDb, v.wetPct, v.mirror ? 1 : 0, v.invert ? 1 : 0);
+    return buf;
+}
+
+VoiceParams ParseVoice(const wchar_t* text)
+{
+    double         f[6] = {0, 0, 0, 100, 0, 0};
+    const wchar_t* cur  = text;
+    for (int i = 0; i < 6 && *cur; ++i) {
+        wchar_t*     end = nullptr;
+        const double v   = wcstod(cur, &end);
+        if (end == cur) break;
+        f[i] = v;
+        cur  = (*end == L',') ? end + 1 : end;
+    }
+    VoiceParams v;
+    v.pitch   = static_cast<float>(f[0]);
+    v.formant = static_cast<float>(f[1]);
+    v.gainDb  = static_cast<float>(f[2]);
+    v.wetPct  = static_cast<int>(f[3]);
+    v.mirror  = f[4] != 0;
+    v.invert  = f[5] != 0;
+    return voicepresets::Clamped(v);
+}
 } // namespace
 
 Settings LoadSettings(const std::wstring& iniPath, const wchar_t* section)
@@ -318,6 +347,25 @@ Settings LoadSettings(const std::wstring& iniPath, const wchar_t* section)
         s.autoProfile = geti(L"Automation", L"AutoProfile", 1) != 0;
         s.trayIcon    = geti(L"Automation", L"TrayIcon", 0) != 0;
     }
+
+    {   // Voicechanger: [Voice] Params, Preset, Monitor; eigene Stimmen in [VoicePresets] Count, Name<n>, Params<n>
+        wchar_t buf[128] = {};
+        GetPrivateProfileStringW(L"Voice", L"Params", L"", buf, 128, p);
+        if (buf[0]) s.voice = ParseVoice(buf);
+        GetPrivateProfileStringW(L"Voice", L"Preset", L"", buf, 128, p);
+        s.voicePresetName = buf;
+        s.voiceMonitorPct = std::min(100, std::max(0, static_cast<int>(GetPrivateProfileIntW(L"Voice", L"Monitor", 0, p))));
+        s.voiceLongWindow = GetPrivateProfileIntW(L"Voice", L"LongWindow", 0, p) != 0;
+        const int n = std::min<int>(static_cast<int>(voicepresets::kMaxUser), std::max<int>(0, GetPrivateProfileIntW(L"VoicePresets", L"Count", 0, p)));
+        for (int i = 1; i <= n; ++i) {
+            wchar_t key[32], name[128] = {};
+            swprintf(key, 32, L"Name%d", i);
+            GetPrivateProfileStringW(L"VoicePresets", key, L"", name, 128, p);
+            swprintf(key, 32, L"Params%d", i);
+            GetPrivateProfileStringW(L"VoicePresets", key, L"", buf, 128, p);
+            s.voicePresets.Save(name, ParseVoice(buf));
+        }
+    }
     return s;
 }
 
@@ -467,5 +515,19 @@ void SaveSettings(const std::wstring& iniPath, const Settings& s)
         }
         puti(L"Automation", L"AutoProfile", s.autoProfile ? 1 : 0);
         puti(L"Automation", L"TrayIcon", s.trayIcon ? 1 : 0);
+    }
+
+    WritePrivateProfileStringW(L"Voice", L"Params", FormatVoice(s.voice).c_str(), p);
+    WritePrivateProfileStringW(L"Voice", L"Preset", s.voicePresetName.c_str(), p);
+    WritePrivateProfileStringW(L"Voice", L"Monitor", std::to_wstring(s.voiceMonitorPct).c_str(), p);
+    WritePrivateProfileStringW(L"Voice", L"LongWindow", s.voiceLongWindow ? L"1" : L"0", p);
+    WritePrivateProfileStringW(L"VoicePresets", nullptr, nullptr, p); // Abschnitt leeren, damit geloeschte Stimmen verschwinden
+    WritePrivateProfileStringW(L"VoicePresets", L"Count", std::to_wstring(s.voicePresets.items.size()).c_str(), p);
+    for (size_t i = 0; i < s.voicePresets.items.size(); ++i) {
+        wchar_t key[32];
+        swprintf(key, 32, L"Name%zu", i + 1);
+        WritePrivateProfileStringW(L"VoicePresets", key, s.voicePresets.items[i].name.c_str(), p);
+        swprintf(key, 32, L"Params%zu", i + 1);
+        WritePrivateProfileStringW(L"VoicePresets", key, FormatVoice(s.voicePresets.items[i].params).c_str(), p);
     }
 }
